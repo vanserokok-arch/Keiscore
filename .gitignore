@@ -1,0 +1,5 @@
+node_modules
+.roi_debug
+_roi_debug
+*.log
+dist
