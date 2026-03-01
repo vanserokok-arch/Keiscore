@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { execa } from "execa";
@@ -118,6 +118,13 @@ interface FieldDebugCandidate {
 interface FieldDebugBlock {
   source_counts: Record<BestCandidateSource, number>;
   top_candidates: FieldDebugCandidate[];
+  zonal_tsv_lines_preview?: string[];
+  zonal_tsv_empty_zones?: Array<{ reason: string; crop_path: string | null }>;
+}
+
+interface ZonalDebugEmptyZone {
+  reason: string;
+  crop_path: string | null;
 }
 
 function normalizeOptions(opts?: ExtractOptions): ExtractOptions & { logger: AuditLogger } {
@@ -1125,7 +1132,22 @@ function buildFieldDebugBlock(field: PassportField, attempts: OcrPassResult[]): 
         rejection_reason: evaluation.rejectionReason
       };
     });
-  return { source_counts, top_candidates };
+  const zonal_tsv_lines_preview = [...new Set(
+    attempts
+      .filter((attempt) => resolveBestCandidateSource(attempt) === "zonal_tsv")
+      .flatMap((attempt) => attempt.zonal_tsv_lines_preview ?? [])
+      .map((line) => normalizeRussianText(line).replace(/\s+/gu, " ").trim())
+      .filter((line) => line !== "")
+  )].slice(0, 3);
+  const zonal_tsv_empty_zones = attempts
+    .filter((attempt) => resolveBestCandidateSource(attempt) === "zonal_tsv")
+    .flatMap((attempt) => attempt.zonal_tsv_empty_zones ?? []);
+  return {
+    source_counts,
+    top_candidates,
+    ...(zonal_tsv_lines_preview.length === 0 ? {} : { zonal_tsv_lines_preview }),
+    ...(zonal_tsv_empty_zones.length === 0 ? {} : { zonal_tsv_empty_zones })
+  };
 }
 
 function selectBestCandidate(
@@ -1302,17 +1324,7 @@ async function buildPageFallbackAttempts(
       });
     }
     if (issuedByAttempt !== null) {
-      attempts.push({
-        field: "issued_by",
-        pass_id: "C",
-        text: issuedByAttempt.text,
-        confidence: issuedByAttempt.confidence,
-        bbox: issuedByAttempt.bbox,
-        engine_used: "tesseract",
-        psm: 6,
-        normalized_text: normalizeRussianText(issuedByAttempt.text),
-        source: "zonal_tsv"
-      });
+      attempts.push(issuedByAttempt);
     }
     logger.log({
       ts: Date.now(),
@@ -1428,7 +1440,8 @@ function buildTextLinesFromTsvWords(
     if (text === "") {
       continue;
     }
-    const confidence = sorted.reduce((max, word) => Math.max(max, word.confidence), 0);
+    const confidence =
+      sorted.length === 0 ? 0 : sorted.reduce((sum, word) => sum + Math.max(0, word.confidence), 0) / sorted.length;
     const bbox = sorted.reduce(
       (acc, word) => ({
         x1: Math.min(acc.x1, word.bbox.x1),
@@ -1441,6 +1454,103 @@ function buildTextLinesFromTsvWords(
     lines.push({ text, confidence, bbox });
   }
   return lines.sort((a, b) => (a.bbox.y1 === b.bbox.y1 ? a.bbox.x1 - b.bbox.x1 : a.bbox.y1 - b.bbox.y1));
+}
+
+async function runTsvOcrOnImage(
+  imagePath: string,
+  psm: number,
+  offset: { x: number; y: number }
+): Promise<TsvWord[]> {
+  const { stdout } = await execa("tesseract", [imagePath, "stdout", "-l", "rus", "--psm", String(psm), "tsv"], {
+    timeout: 12_000,
+    reject: false
+  });
+  return parsePageTsvWords(stdout, offset);
+}
+
+function buildZonalLinesPreview(lines: Array<{ text: string }>): string[] {
+  return lines
+    .map((line) => normalizeRussianText(line.text).replace(/\s+/gu, " ").trim())
+    .filter((line) => line !== "")
+    .slice(0, 3);
+}
+
+async function persistDebugCrop(
+  field: "fio" | "issued_by",
+  label: string,
+  buffer: Buffer
+): Promise<string | null> {
+  const debugDir = (process.env.KEISCORE_DEBUG_ROI_DIR ?? "").trim();
+  if (debugDir === "") {
+    return null;
+  }
+  await mkdir(debugDir, { recursive: true });
+  const cropPath = join(debugDir, `${field}_zonal_tsv_${label}_${Date.now()}.png`);
+  await writeFile(cropPath, buffer);
+  return cropPath;
+}
+
+function buildFioCandidatesFromTsvLines(
+  lines: Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"] }>,
+  mrzSurnames: string[]
+): Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"]; score: number }> {
+  const candidates: Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"]; score: number }> = [];
+  for (const line of lines) {
+    const normalizedLine = normalizeRussianText(line.text).replace(/\s+/gu, " ").trim();
+    if (normalizedLine === "") {
+      continue;
+    }
+    const words = normalizedLine.split(" ").filter((item) => item.length > 0);
+    for (let start = 0; start <= words.length - 3; start += 1) {
+      const windowWords = words.slice(start, start + 3);
+      const joined = windowWords.join(" ").trim();
+      if (!FIO_CYRILLIC_ALLOWED_REGEX.test(joined)) {
+        continue;
+      }
+      const validated = validateFio(joined);
+      if (validated === null) {
+        continue;
+      }
+      const [surname, name, patronymic] = validated.split(" ");
+      if (surname === undefined || name === undefined || patronymic === undefined || surname.length < 5) {
+        continue;
+      }
+      const compact = validated.replace(/\s+/gu, "");
+      const digits = (compact.match(/\d/gu) ?? []).length;
+      const digitRatio = digits / Math.max(1, compact.length);
+      if (digitRatio > 0.02) {
+        continue;
+      }
+      const letters = (compact.match(/[А-ЯЁ]/gu) ?? []).length;
+      const letterRatio = letters / Math.max(1, compact.length);
+      const avgConfidence = Math.max(0, Math.min(1, line.confidence / 100));
+      const digitPenalty = digitRatio * 4;
+      let score = avgConfidence + letterRatio - digitPenalty;
+      const normalizedSurname = extractFioSurname(validated);
+      if (mrzSurnames.length > 0) {
+        const nearest = [...mrzSurnames]
+          .map((mrzSurname) => levenshteinDistance(normalizedSurname, mrzSurname))
+          .sort((a, b) => a - b)[0];
+        if (nearest !== undefined) {
+          if (nearest <= 2) {
+            score += 0.08;
+          } else if (nearest >= 6) {
+            score -= 0.05;
+          }
+        }
+      }
+      if (/(.)\1{2,}/u.test(validated)) {
+        score -= 0.06;
+      }
+      candidates.push({
+        text: validated,
+        confidence: Math.max(0.35, Math.min(0.92, 0.45 + avgConfidence * 0.5)),
+        bbox: line.bbox,
+        score
+      });
+    }
+  }
+  return candidates.sort((left, right) => right.score - left.score);
 }
 
 export function selectBestFioFromCyrillicLines(lines: string[], mrzSurnames: string[] = []): string | null {
@@ -1516,6 +1626,59 @@ export function selectBestFioFromCyrillicLines(lines: string[], mrzSurnames: str
   return best?.text ?? null;
 }
 
+function pickFioProbeFromLines(lines: Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"] }>): {
+  text: string;
+  confidence: number;
+  bbox: OcrPassResult["bbox"];
+} | null {
+  for (const line of lines) {
+    const normalizedLine = normalizeRussianText(line.text).replace(/\s+/gu, " ").trim();
+    if (normalizedLine === "") {
+      continue;
+    }
+    const words = normalizedLine.split(" ").filter((item) => item.length > 0);
+    for (let start = 0; start <= words.length - 3; start += 1) {
+      const joined = words.slice(start, start + 3).join(" ");
+      if (!FIO_CYRILLIC_ALLOWED_REGEX.test(joined)) {
+        continue;
+      }
+      return {
+        text: joined,
+        confidence: Math.max(0.18, Math.min(0.45, line.confidence / 100)),
+        bbox: line.bbox
+      };
+    }
+  }
+  return null;
+}
+
+function pickFioProbeFromWords(words: TsvWord[]): { text: string; confidence: number; bbox: OcrPassResult["bbox"] } | null {
+  const sortedWords = [...words].sort((a, b) => (a.bbox.y1 === b.bbox.y1 ? a.bbox.x1 - b.bbox.x1 : a.bbox.y1 - b.bbox.y1));
+  for (let i = 0; i <= sortedWords.length - 3; i += 1) {
+    const chunk = sortedWords.slice(i, i + 3);
+    const merged = normalizeRussianText(chunk.map((word) => word.text).join(" ")).replace(/\s+/gu, " ").trim();
+    if (!FIO_CYRILLIC_ALLOWED_REGEX.test(merged)) {
+      continue;
+    }
+    const confidence = chunk.reduce((sum, word) => sum + Math.max(0, word.confidence), 0) / (chunk.length * 100);
+    const bbox = chunk.reduce(
+      (acc, word) => ({
+        x1: Math.min(acc.x1, word.bbox.x1),
+        y1: Math.min(acc.y1, word.bbox.y1),
+        x2: Math.max(acc.x2, word.bbox.x2),
+        y2: Math.max(acc.y2, word.bbox.y2)
+      }),
+      { ...chunk[0]!.bbox }
+    );
+    return {
+      text: merged,
+      confidence: Math.max(0.16, Math.min(0.42, confidence)),
+      bbox
+    };
+  }
+  return null;
+}
+
 function extractMrzSurnames(attempts: OcrPassResult[]): string[] {
   const surnames = new Set<string>();
   for (const attempt of attempts) {
@@ -1551,9 +1714,9 @@ async function extractFioFromTsvZones(
     return null;
   }
   const globalZones = [
-    { leftR: 0.1, topR: 0.31, rightR: 0.78, bottomR: 0.365, label: "fio_global_31_365" },
-    { leftR: 0.1, topR: 0.355, rightR: 0.78, bottomR: 0.41, label: "fio_global_355_41" },
-    { leftR: 0.1, topR: 0.4, rightR: 0.78, bottomR: 0.46, label: "fio_global_40_46" }
+    { leftR: 0.08, topR: 0.39, rightR: 0.8, bottomR: 0.44, label: "fio_global_39_44" },
+    { leftR: 0.08, topR: 0.42, rightR: 0.8, bottomR: 0.47, label: "fio_global_42_47" },
+    { leftR: 0.08, topR: 0.45, rightR: 0.8, bottomR: 0.5, label: "fio_global_45_50" }
   ].map((zone) => ({
     left: Math.max(0, Math.round(normalized.width * zone.leftR)),
     top: Math.max(0, Math.round(normalized.height * zone.topR)),
@@ -1565,12 +1728,12 @@ async function extractFioFromTsvZones(
     fioRoi === null
       ? []
       : [
-          { topPart: -0.05, bottomPart: 0.1, label: "fio_roi_1" },
-          { topPart: 0.08, bottomPart: 0.22, label: "fio_roi_2" },
-          { topPart: 0.2, bottomPart: 0.35, label: "fio_roi_3" }
+          { topPart: -0.02, bottomPart: 0.08, label: "fio_roi_1" },
+          { topPart: 0.09, bottomPart: 0.18, label: "fio_roi_2" },
+          { topPart: 0.19, bottomPart: 0.28, label: "fio_roi_3" }
         ].map((zone) => {
-          const left = clamp(Math.round(fioRoi.x - fioRoi.width * 0.12), 0, normalized.width - 1);
-          const width = clamp(Math.round(fioRoi.width * 1.3), 1, normalized.width - left);
+          const left = clamp(Math.round(fioRoi.x - fioRoi.width * 0.08), 0, normalized.width - 1);
+          const width = clamp(Math.round(fioRoi.width * 1.22), 1, normalized.width - left);
           const top = clamp(Math.round(fioRoi.y + fioRoi.height * zone.topPart), 0, normalized.height - 1);
           const bottom = clamp(Math.round(fioRoi.y + fioRoi.height * zone.bottomPart), top + 1, normalized.height);
           return {
@@ -1585,34 +1748,39 @@ async function extractFioFromTsvZones(
   const tmpBase = await mkdtemp(join(tmpdir(), "keiscore-fio-zone-"));
   try {
     let best: { text: string; confidence: number; bbox: OcrPassResult["bbox"]; score: number } | null = null;
+    const allLines: Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"] }> = [];
+    const allWords: TsvWord[] = [];
+    const emptyZones: ZonalDebugEmptyZone[] = [];
     for (const zone of zoneRects) {
       const zonePath = join(tmpBase, `fio_zone_${zone.label}.png`);
       const zoneBuffer = await sharp(sourceBuffer).extract(zone).grayscale().normalise().median(1).sharpen().png().toBuffer();
       await writeFile(zonePath, zoneBuffer);
       for (const psm of [4, 6, 11] as const) {
-        const { stdout } = await execa("tesseract", [zonePath, "stdout", "-l", "rus", "--psm", String(psm), "tsv"], {
-          timeout: 12_000
-        });
-        const words = parsePageTsvWords(stdout, { x: zone.left, y: zone.top });
+        const words = await runTsvOcrOnImage(zonePath, psm, { x: zone.left, y: zone.top });
+        if (words.length === 0) {
+          emptyZones.push({
+            reason: `tsv_empty:${zone.label}:psm_${psm}`,
+            crop_path: await persistDebugCrop("fio", `${zone.label}_psm_${psm}`, zoneBuffer)
+          });
+          continue;
+        }
+        allWords.push(...words);
         const lines = buildTextLinesFromTsvWords(words);
         if (lines.length === 0) {
+          emptyZones.push({
+            reason: `line_merge_empty:${zone.label}:psm_${psm}`,
+            crop_path: await persistDebugCrop("fio", `${zone.label}_psm_${psm}_lines`, zoneBuffer)
+          });
           continue;
         }
-        const lineTexts = lines.map((line) => line.text);
-        for (let idx = 0; idx < lines.length - 1; idx += 1) {
-          lineTexts.push(`${lines[idx]!.text} ${lines[idx + 1]!.text}`);
-        }
-        for (let idx = 0; idx < lines.length - 2; idx += 1) {
-          lineTexts.push(`${lines[idx]!.text} ${lines[idx + 1]!.text} ${lines[idx + 2]!.text}`);
-        }
-        const bestText = selectBestFioFromCyrillicLines(lineTexts, mrzSurnames);
-        if (bestText === null) {
+        allLines.push(...lines);
+        const bestLine = buildFioCandidatesFromTsvLines(lines, mrzSurnames)[0] ?? null;
+        if (bestLine === null) {
           continue;
         }
-        const matchedLine = lines.find((line) => normalizeRussianText(line.text).replace(/\s+/gu, " ").includes(bestText));
-        const confidenceBase = matchedLine === undefined ? 0.62 : Math.max(0.35, Math.min(0.9, matchedLine.confidence / 100));
-        const surname = extractFioSurname(bestText);
-        let score = scoreValidatedFio(bestText, confidenceBase) + (psm === 11 ? 2 : 0);
+        const confidenceBase = bestLine.confidence;
+        const surname = extractFioSurname(bestLine.text);
+        let score = scoreValidatedFio(bestLine.text, confidenceBase) + (psm === 11 ? 2 : 0);
         if (mrzSurnames.length > 0) {
           const closest = [...mrzSurnames]
             .map((candidate) => levenshteinDistance(surname, candidate))
@@ -1625,17 +1793,11 @@ async function extractFioFromTsvZones(
             }
           }
         }
-        const bbox =
-          matchedLine?.bbox ?? {
-            x1: zone.left,
-            y1: zone.top,
-            x2: zone.left + zone.width,
-            y2: zone.top + zone.height
-          };
+        const bbox = bestLine.bbox;
         if (best === null || score > best.score) {
           const confidenceFromScore = Math.max(0.45, Math.min(0.93, 0.48 + Math.max(0, score) / 220));
           best = {
-            text: bestText,
+            text: bestLine.text,
             confidence: Math.max(confidenceBase, confidenceFromScore),
             bbox,
             score
@@ -1643,8 +1805,26 @@ async function extractFioFromTsvZones(
         }
       }
     }
+    const linesPreview = buildZonalLinesPreview(allLines);
     if (best === null) {
-      return null;
+      const probe = pickFioProbeFromLines(allLines) ?? pickFioProbeFromWords(allWords);
+      if (probe === null) {
+        return null;
+      }
+      return {
+        field: "fio",
+        pass_id: "C",
+        text: probe.text,
+        confidence: probe.confidence,
+        bbox: probe.bbox,
+        engine_used: "tesseract",
+        psm: 6,
+        raw_text: probe.text,
+        normalized_text: normalizeRussianText(probe.text),
+        source: "zonal_tsv",
+        ...(linesPreview.length === 0 ? {} : { zonal_tsv_lines_preview: linesPreview }),
+        ...(emptyZones.length === 0 ? {} : { zonal_tsv_empty_zones: emptyZones })
+      };
     }
     return {
       field: "fio",
@@ -1656,7 +1836,9 @@ async function extractFioFromTsvZones(
       psm: 6,
       raw_text: best.text,
       normalized_text: best.text,
-      source: "zonal_tsv"
+      source: "zonal_tsv",
+      ...(linesPreview.length === 0 ? {} : { zonal_tsv_lines_preview: linesPreview }),
+      ...(emptyZones.length === 0 ? {} : { zonal_tsv_empty_zones: emptyZones })
     };
   } catch (error) {
     logger.log({
@@ -1700,11 +1882,23 @@ export function buildIssuedByCandidatesFromTsvWords(
       if (merged.includes("<")) {
         continue;
       }
+      if (/\d{6,}/u.test(merged)) {
+        continue;
+      }
+      const charsNoSpace = merged.replace(/\s+/gu, "");
+      const digitRatioRaw = (charsNoSpace.match(/\d/gu) ?? []).length / Math.max(1, charsNoSpace.length);
+      if (digitRatioRaw > 0.05) {
+        continue;
+      }
       const quality = assessIssuedByQuality(merged);
       if (quality.validated === null) {
         continue;
       }
-      const confidence = Math.max(0.35, Math.min(0.92, Math.max(...chunk.map((line) => line.confidence)) / 100));
+      if (chunk.length < 2) {
+        continue;
+      }
+      const avgLineConfidence = chunk.reduce((sum, line) => sum + Math.max(0, line.confidence), 0) / chunk.length;
+      const confidence = Math.max(0.35, Math.min(0.92, avgLineConfidence / 100));
       const bbox = chunk.reduce(
         (acc, line) => ({
           x1: Math.min(acc.x1, line.bbox.x1),
@@ -1714,7 +1908,9 @@ export function buildIssuedByCandidatesFromTsvWords(
         }),
         { ...chunk[0]!.bbox }
       );
-      const score = quality.score + confidence * 12 + (chunk.length >= 3 ? 3 : 0);
+      const digitPenalty = digitRatioRaw * 100;
+      const markerBonus = quality.markersCount * 8;
+      const score = avgLineConfidence + markerBonus - digitPenalty;
       candidates.push({
         text: quality.validated,
         confidence,
@@ -1730,15 +1926,15 @@ async function extractIssuedByFromTsvZones(
   normalized: Awaited<ReturnType<typeof FormatNormalizer.normalize>>,
   logger: AuditLogger,
   issuedByRoi: FieldRoi["roi"] | null
-): Promise<{ text: string; confidence: number; bbox: OcrPassResult["bbox"] } | null> {
+): Promise<OcrPassResult | null> {
   const imagePath = normalized.pages[0]?.imagePath;
   if (imagePath === null || imagePath === undefined) {
     return null;
   }
   const globalZoneCandidates = [
-    { leftR: 0.4, topR: 0.28, rightR: 0.96, bottomR: 0.35, label: "issued_28_35" },
-    { leftR: 0.4, topR: 0.34, rightR: 0.96, bottomR: 0.41, label: "issued_34_41" },
-    { leftR: 0.4, topR: 0.4, rightR: 0.96, bottomR: 0.48, label: "issued_40_48" }
+    { leftR: 0.4, topR: 0.32, rightR: 0.98, bottomR: 0.4, label: "issued_32_40" },
+    { leftR: 0.4, topR: 0.35, rightR: 0.98, bottomR: 0.43, label: "issued_35_43" },
+    { leftR: 0.4, topR: 0.38, rightR: 0.98, bottomR: 0.46, label: "issued_38_46" }
   ].map((candidate) => ({
     left: Math.max(0, Math.round(normalized.width * candidate.leftR)),
     top: Math.max(0, Math.round(normalized.height * candidate.topR)),
@@ -1750,12 +1946,12 @@ async function extractIssuedByFromTsvZones(
     issuedByRoi === null
       ? []
       : [
-          { topPart: -0.03, bottomPart: 0.12, label: "issued_roi_1" },
-          { topPart: 0.1, bottomPart: 0.24, label: "issued_roi_2" },
-          { topPart: 0.22, bottomPart: 0.38, label: "issued_roi_3" }
+          { topPart: -0.08, bottomPart: 0.04, label: "issued_roi_1" },
+          { topPart: 0.02, bottomPart: 0.12, label: "issued_roi_2" },
+          { topPart: 0.1, bottomPart: 0.2, label: "issued_roi_3" }
         ].map((zone) => {
-          const left = clamp(Math.round(issuedByRoi.x - issuedByRoi.width * 0.06), 0, normalized.width - 1);
-          const width = clamp(Math.round(issuedByRoi.width * 1.1), 1, normalized.width - left);
+          const left = clamp(Math.round(issuedByRoi.x - issuedByRoi.width * 0.03), 0, normalized.width - 1);
+          const width = clamp(Math.round(issuedByRoi.width * 1.05), 1, normalized.width - left);
           const top = clamp(Math.round(issuedByRoi.y + issuedByRoi.height * zone.topPart), 0, normalized.height - 1);
           const bottom = clamp(
             Math.round(issuedByRoi.y + issuedByRoi.height * zone.bottomPart),
@@ -1783,30 +1979,72 @@ async function extractIssuedByFromTsvZones(
     const tmpBase = await mkdtemp(join(tmpdir(), "keiscore-issued-by-zone-"));
     try {
       let best: { text: string; confidence: number; bbox: OcrPassResult["bbox"]; score: number } | null = null;
+      const allLines: Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"] }> = [];
+      const emptyZones: ZonalDebugEmptyZone[] = [];
       for (const zone of zoneCandidates) {
         const zonePath = join(tmpBase, `issued_by_zone_${zone.label}.png`);
         const zoneBuffer = await sharp(sourceBuffer).extract(zone).png().toBuffer();
         const enhancedZone = await enhanceIssuedByZone(zoneBuffer);
         await writeFile(zonePath, enhancedZone);
         for (const psm of [6, 11] as const) {
-          const { stdout } = await execa(
-            "tesseract",
-            [zonePath, "stdout", "-l", "rus", "--psm", String(psm), "tsv"],
-            {
-              timeout: 12_000
-            }
-          );
-          const words = parsePageTsvWords(stdout, { x: zone.left, y: zone.top });
+          const words = await runTsvOcrOnImage(zonePath, psm, { x: zone.left, y: zone.top });
+          if (words.length === 0) {
+            emptyZones.push({
+              reason: `tsv_empty:${zone.label}:psm_${psm}`,
+              crop_path: await persistDebugCrop("issued_by", `${zone.label}_psm_${psm}`, enhancedZone)
+            });
+            continue;
+          }
+          const lines = buildTextLinesFromTsvWords(words);
+          if (lines.length === 0) {
+            emptyZones.push({
+              reason: `line_merge_empty:${zone.label}:psm_${psm}`,
+              crop_path: await persistDebugCrop("issued_by", `${zone.label}_psm_${psm}_lines`, enhancedZone)
+            });
+            continue;
+          }
+          allLines.push(...lines);
           const zoneBest = buildIssuedByCandidatesFromTsvWords(words)[0] ?? null;
           if (zoneBest !== null && (best === null || zoneBest.score > best.score)) {
             best = zoneBest;
           }
         }
       }
+      const linesPreview = buildZonalLinesPreview(allLines);
       if (best === null) {
-        return null;
+        const probe = pickIssuedByProbeFromLines(allLines);
+        if (probe === null) {
+          return null;
+        }
+        return {
+          field: "issued_by",
+          pass_id: "C",
+          text: probe.text,
+          confidence: probe.confidence,
+          bbox: probe.bbox,
+          engine_used: "tesseract",
+          psm: 6,
+          raw_text: probe.text,
+          normalized_text: normalizeRussianText(probe.text),
+          source: "zonal_tsv",
+          ...(linesPreview.length === 0 ? {} : { zonal_tsv_lines_preview: linesPreview }),
+          ...(emptyZones.length === 0 ? {} : { zonal_tsv_empty_zones: emptyZones })
+        };
       }
-      return { text: best.text, confidence: best.confidence, bbox: best.bbox };
+      return {
+        field: "issued_by",
+        pass_id: "C",
+        text: best.text,
+        confidence: best.confidence,
+        bbox: best.bbox,
+        engine_used: "tesseract",
+        psm: 6,
+        raw_text: best.text,
+        normalized_text: normalizeRussianText(best.text),
+        source: "zonal_tsv",
+        ...(linesPreview.length === 0 ? {} : { zonal_tsv_lines_preview: linesPreview }),
+        ...(emptyZones.length === 0 ? {} : { zonal_tsv_empty_zones: emptyZones })
+      };
     } finally {
       await rm(tmpBase, { recursive: true, force: true });
     }
@@ -1820,6 +2058,44 @@ async function extractIssuedByFromTsvZones(
     });
     return null;
   }
+}
+
+function pickIssuedByProbeFromLines(lines: Array<{ text: string; confidence: number; bbox: OcrPassResult["bbox"] }>): {
+  text: string;
+  confidence: number;
+  bbox: OcrPassResult["bbox"];
+} | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    const merged = normalizeIssuedByChunk(lines.slice(i, i + 3).map((line) => line.text).join(" "));
+    if (merged === "" || merged.includes("<") || /\d{6,}/u.test(merged)) {
+      continue;
+    }
+    const charsNoSpace = merged.replace(/\s+/gu, "");
+    const digitRatio = (charsNoSpace.match(/\d/gu) ?? []).length / Math.max(1, charsNoSpace.length);
+    if (digitRatio > 0.05) {
+      continue;
+    }
+    const subset = lines.slice(i, i + Math.min(3, lines.length - i));
+    if (subset.length < 2) {
+      continue;
+    }
+    const bbox = subset.reduce(
+      (acc, line) => ({
+        x1: Math.min(acc.x1, line.bbox.x1),
+        y1: Math.min(acc.y1, line.bbox.y1),
+        x2: Math.max(acc.x2, line.bbox.x2),
+        y2: Math.max(acc.y2, line.bbox.y2)
+      }),
+      { ...subset[0]!.bbox }
+    );
+    const confidence = subset.reduce((sum, line) => sum + Math.max(0, line.confidence), 0) / (subset.length * 100);
+    return {
+      text: merged,
+      confidence: Math.max(0.2, Math.min(0.5, confidence)),
+      bbox
+    };
+  }
+  return null;
 }
 
 function lineHasIssuedByStopSignal(text: string): boolean {
