@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-sandbox",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "anchors/**/*.ts",
+    "audit/**/*.ts",
+    "detection/**/*.ts",
+    "engines/**/*.ts",
+    "extractors/**/*.ts",
+    "format/**/*.ts",
+    "scoring/**/*.ts",
+    "validators/**/*.ts",
+    "index.ts",
+    "types.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "dist",
+    "dist-sandbox",
+    "node_modules",
+    "tests"
+  ]
+}
