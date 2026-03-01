@@ -1,8 +1,11 @@
 import { app, BrowserWindow } from "electron";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { registerSandboxIpcHandlers } from "./sandbox-ipc.js";
 
 function createWindow(): BrowserWindow {
+  const preloadPath = fileURLToPath(new URL("./preload.js", import.meta.url));
+  const rendererPath = fileURLToPath(new URL("../../renderer/index.html", import.meta.url));
+
   const window = new BrowserWindow({
     width: 1100,
     height: 650,
@@ -11,27 +14,32 @@ function createWindow(): BrowserWindow {
     center: true,
     title: "KeisHP OCR Sandbox",
     webPreferences: {
-      preload: join(__dirname, "preload.js"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
     }
   });
   window.setMenuBarVisibility(false);
-  window.loadFile(join(__dirname, "../../renderer/index.html"));
+  window.loadFile(rendererPath);
   return window;
 }
 
-app.whenReady().then(() => {
-  registerSandboxIpcHandlers();
-  createWindow();
+app.whenReady()
+  .then(() => {
+    registerSandboxIpcHandlers();
+    createWindow();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  })
+  .catch((error: unknown) => {
+    console.error("Sandbox main failed during startup:", error);
+    app.quit();
   });
-});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
