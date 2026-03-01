@@ -15,6 +15,13 @@ export interface TesseractAvailability {
   version?: string;
 }
 
+export interface MrzOcrAttempt {
+  psm: 6 | 11 | 13;
+  rawText: string;
+  normalizedText: string;
+  confidence: number;
+}
+
 export class TesseractEngine {
   static async detectAvailability(): Promise<TesseractAvailability> {
     try {
@@ -120,18 +127,68 @@ export class TesseractEngine {
           postprocessed_roi_image_path: preprocessedPath
         };
       } finally {
-        await cleanupPreprocessedPath(preprocessedPath);
+        if (process.env.KEISCORE_DEBUG_ROI_DIR === undefined || process.env.KEISCORE_DEBUG_ROI_DIR.trim() === "") {
+          await cleanupPreprocessedPath(preprocessedPath);
+        }
       }
     };
 
     return withTimeout(execute(), timeoutMs);
+  }
+
+  static async runMrzOcrOnImage(
+    imagePath: string,
+    timeoutMs: number,
+    logger?: AuditLogger
+  ): Promise<MrzOcrAttempt[]> {
+    const attempts: MrzOcrAttempt[] = [];
+    for (const psm of [6, 11, 13] as const) {
+      const args = [
+        imagePath,
+        "stdout",
+        "-l",
+        "eng",
+        "--oem",
+        "1",
+        "--psm",
+        String(psm),
+        "-c",
+        "preserve_interword_spaces=1",
+        "-c",
+        "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
+        "tsv"
+      ];
+      const result = await execa("tesseract", args, { timeout: timeoutMs, reject: false });
+      if (typeof result.exitCode === "number" && result.exitCode !== 0) {
+        throw new Error(`MRZ Tesseract failed with exit code ${result.exitCode}: ${trimToLength(result.stderr, 300)}`);
+      }
+      const parsed = parseTsv(result.stdout);
+      if (parsed.rawText.trim() === "") {
+        continue;
+      }
+      const confidence = normalizeConfidence(parsed.confidence);
+      attempts.push({
+        psm,
+        rawText: parsed.rawText,
+        normalizedText: parsed.normalizedText,
+        confidence
+      });
+      logger?.log({
+        ts: Date.now(),
+        stage: "tesseract-engine",
+        level: "info",
+        message: "MRZ OCR pass completed.",
+        data: { psm, confidence, roiPath: imagePath }
+      });
+    }
+    return attempts;
   }
 }
 
 const FIELD_OCR_CONFIG: Record<
   PassportField,
   {
-    psmByPass: Record<"A" | "B" | "C", 4 | 6 | 7 | 8>;
+    psmByPass: Record<"A" | "B" | "C", 4 | 6 | 7 | 8 | 13>;
     whitelist?: string;
   }
 > = {
@@ -140,7 +197,7 @@ const FIELD_OCR_CONFIG: Record<
     whitelist: "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- "
   },
   passport_number: {
-    psmByPass: { A: 7, B: 8, C: 7 },
+    psmByPass: { A: 7, B: 8, C: 13 },
     whitelist: "0123456789№- "
   },
   issued_by: {
@@ -148,7 +205,7 @@ const FIELD_OCR_CONFIG: Record<
     whitelist: 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ0123456789 .,"()-'
   },
   dept_code: {
-    psmByPass: { A: 7, B: 8, C: 7 },
+    psmByPass: { A: 7, B: 8, C: 13 },
     whitelist: "0123456789№- "
   },
   registration: {
@@ -157,7 +214,7 @@ const FIELD_OCR_CONFIG: Record<
   }
 };
 
-function psmForFieldAndPass(field: PassportField, passId: "A" | "B" | "C"): 4 | 6 | 7 | 8 {
+function psmForFieldAndPass(field: PassportField, passId: "A" | "B" | "C"): 4 | 6 | 7 | 8 | 13 {
   return FIELD_OCR_CONFIG[field].psmByPass[passId];
 }
 

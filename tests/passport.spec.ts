@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import * as coreModule from "../index.js";
 import {
+  buildIssuedByCandidatesFromTsvWords,
+  selectBestFioFromCyrillicLines,
+  type TsvWord
+} from "../extractors/rfInternalPassportExtractor.js";
+import {
   ExtractionResultSchema,
   InMemoryAuditLogger,
   extractRfInternalPassport,
   validateDeptCode,
+  validateFio,
+  validateIssuedBy,
   validatePassportNumber,
   type MockDocumentLayout
 } from "../index.js";
@@ -32,9 +39,179 @@ describe("KEIScore foundation", () => {
 
   it("validates passport fields", () => {
     expect(validatePassportNumber("4120 093363")).toBe("4120 №093363");
+    expect(validatePassportNumber("4120 №093363")).toBe("4120 №093363");
     expect(validateDeptCode("123-456")).toBe("123-456");
+    expect(validateIssuedBy("ГУ МВД РОССИИ ПО Г. МОСКВЕ 1234567890")).toBeNull();
     expect(validatePassportNumber("bad")).toBeNull();
     expect(validateDeptCode("12-1234")).toBeNull();
+  });
+
+  it('validateFio rejects OCR-broken surname like "ВОЯОКОВЕ"', () => {
+    expect(validateFio("ВОЯОКОВЕ АННА НИКОЛАЕВНА")).toBeNull();
+  });
+
+  it("validateIssuedBy rejects long numeric tail candidate", () => {
+    expect(validateIssuedBy("НИИ ОБЛ. ЛЕНИНГРАДСКАЯ 38 0200728470021")).toBeNull();
+  });
+
+  it("fio scorer picks high-quality cyrillic 3-word candidate", () => {
+    const selected = selectBestFioFromCyrillicLines(
+      [
+        "ИЯ АННА НИКОЛАЕВНА ЧИИ",
+        "ГОР ТОСНО",
+        "ВОЛОХОВИЧ АННА НИКОЛАЕВНА",
+        "ВОЛОХОВИЧ АННА НИКОЛАЕВНА 111111"
+      ],
+      ["ВОЛОХОВИЧ"]
+    );
+    expect(selected).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
+  });
+
+  it("fio selector rejects low-quality and non-fio lines", () => {
+    const selected = selectBestFioFromCyrillicLines(
+      ["ГОР ТОСНО", "ВОЯОКОВЕ АННА НИКОЛАЕВНА", "ВОЛОХОВИЧ АННА НИКОЛАЕВНА"],
+      ["ВОЛОХОВИЧ"]
+    );
+    expect(selected).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
+  });
+
+  it("fio selector rejects noisy and digit-heavy candidates", () => {
+    const selected = selectBestFioFromCyrillicLines([
+      "ВОЯОКОВЕ АННА НИКОЛАЕВНА",
+      "ВОЛОХОВИЧ АННА НИКОЛАЕВНА 123456",
+      "ВОЛОХОВИЧ АННА НИКОЛАЕВНА"
+    ]);
+    expect(selected).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
+  });
+
+  it("issued_by line-merge builds stable candidate from TSV words", () => {
+    const words: TsvWord[] = [
+      {
+        text: "ГУ",
+        confidence: 96,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 100, y1: 200, x2: 140, y2: 225 }
+      },
+      {
+        text: "МВД",
+        confidence: 95,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 150, y1: 200, x2: 220, y2: 225 }
+      },
+      {
+        text: "РОССИИ",
+        confidence: 94,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 230, y1: 200, x2: 340, y2: 225 }
+      },
+      {
+        text: "ПО",
+        confidence: 93,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 350, y1: 200, x2: 390, y2: 225 }
+      },
+      {
+        text: "Г.",
+        confidence: 93,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 400, y1: 200, x2: 430, y2: 225 }
+      },
+      {
+        text: "САНКТ-ПЕТЕРБУРГУ",
+        confidence: 92,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 440, y1: 200, x2: 690, y2: 225 }
+      },
+      {
+        text: "И",
+        confidence: 94,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 2,
+        bbox: { x1: 100, y1: 236, x2: 120, y2: 260 }
+      },
+      {
+        text: "ЛЕНИНГРАДСКОЙ",
+        confidence: 95,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 2,
+        bbox: { x1: 130, y1: 236, x2: 320, y2: 260 }
+      },
+      {
+        text: "ОБЛАСТИ",
+        confidence: 95,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 2,
+        bbox: { x1: 330, y1: 236, x2: 450, y2: 260 }
+      }
+    ];
+    const best = buildIssuedByCandidatesFromTsvWords(words)[0]?.text ?? null;
+    expect(best).not.toBeNull();
+    expect(best).toContain("ГУ МВД РОССИИ");
+    expect(best).toContain("САНКТ-ПЕТЕРБУРГУ");
+    expect(best).toContain("ЛЕНИНГРАДСКОЙ");
+    expect(best).toContain("ОБЛАСТИ");
+  });
+
+  it("validateIssuedBy accepts stable authority line", () => {
+    const validated = validateIssuedBy("ГУ МВД РОССИИ ПО Г. САНКТ-ПЕТЕРБУРГУ И ЛЕНИНГРАДСКОЙ ОБЛАСТИ");
+    expect(validated).not.toBeNull();
+    expect(validated).toContain("ГУ МВД РОССИИ");
+    expect(validated).toContain("САНКТ-ПЕТЕРБУРГУ");
+    expect(validated).toContain("ЛЕНИНГРАДСКОЙ");
+  });
+
+  it("issued_by line-merge rejects long numeric tail chunks", () => {
+    const words: TsvWord[] = [
+      {
+        text: "ГУ",
+        confidence: 94,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 110, y1: 200, x2: 150, y2: 224 }
+      },
+      {
+        text: "МВД",
+        confidence: 94,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 158, y1: 200, x2: 230, y2: 224 }
+      },
+      {
+        text: "РОССИИ",
+        confidence: 93,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 1,
+        bbox: { x1: 238, y1: 200, x2: 350, y2: 224 }
+      },
+      {
+        text: "0200728470021",
+        confidence: 95,
+        blockNum: 1,
+        parNum: 1,
+        lineNum: 2,
+        bbox: { x1: 110, y1: 236, x2: 350, y2: 260 }
+      }
+    ];
+    const candidates = buildIssuedByCandidatesFromTsvWords(words).map((item) => item.text);
+    expect(candidates.some((item) => /\d{6,}/u.test(item))).toBe(false);
   });
 
   it("extracts all fields on ideal scan", async () => {
@@ -197,5 +374,56 @@ describe("KEIScore foundation", () => {
 
     const parsed = ExtractionResultSchema.parse(result);
     expect(parsed).toEqual(result);
+  });
+
+  it("stabilizes volokhovich case fields with strict validators", async () => {
+    process.env.ONLINE_OCR_ENDPOINT = "https://ocr.example/api";
+    const result = await extractRfInternalPassport(
+      buildInput({
+        width: 2800,
+        height: 2000,
+        pageTypeHint: "spread_page",
+        centralWindowText: "ПАСПОРТ РОССИЙСКАЯ ФЕДЕРАЦИЯ",
+        anchors: {
+          ФАМИЛИЯ: { x: 420, y: 760 },
+          ВЫДАН: { x: 410, y: 1170 },
+          "КОД ПОДРАЗДЕЛЕНИЯ": { x: 420, y: 1080 }
+        },
+        multiPass: {
+          fio: {
+            A: { text: "АННА НИКОЛАЕВНА ЧИИ", confidence: 0.97 },
+            C: { text: "ВОЛОХОВИЧ АННА НИКОЛАЕВНА", confidence: 0.66 }
+          }
+        },
+        fields: {
+          fio: "ВОЛОХОВИЧ АННА НИКОЛАЕВНА",
+          passport_number: "4120 093363",
+          issued_by: "ГУ МВД РОССИИ ПО Г. САНКТ-ПЕТЕРБУРГУ И ЛЕНИНГРАДСКОЙ ОБЛАСТИ",
+          dept_code: "470-021"
+        }
+      }),
+      { preferOnline: true, debugUnsafeIncludeRawText: true }
+    );
+
+    expect(result.fio).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
+    expect(result.passport_number).toBe("4120 №093363");
+    expect(result.dept_code).toBe("470-021");
+    expect(result.issued_by).toContain("ГУ МВД РОССИИ");
+    expect(result.issued_by).toContain("САНКТ-ПЕТЕРБУРГУ");
+    expect(result.issued_by).toContain("ЛЕНИНГРАДСКОЙ");
+
+    const fioReport = result.field_reports.find((report) => report.field === "fio");
+    const issuedByReport = result.field_reports.find((report) => report.field === "issued_by");
+
+    expect(fioReport?.best_candidate_preview).toBeDefined();
+    expect(issuedByReport?.best_candidate_preview).toBeDefined();
+    expect(fioReport?.best_candidate_preview).not.toBe("mrz_roi_fio");
+    expect(issuedByReport?.best_candidate_preview).not.toBe("zonal_tsv_issued_by");
+    expect(fioReport?.best_candidate_preview).toContain("АННА");
+    expect(issuedByReport?.best_candidate_preview).toMatch(/МВД|ГУ МВД/u);
+    const fioPreviews = fioReport?.attempts?.map((attempt) => attempt.normalized_preview) ?? [];
+    const issuedByPreviews = issuedByReport?.attempts?.map((attempt) => attempt.normalized_preview) ?? [];
+    expect(fioPreviews).not.toContain("mrz_roi_fio");
+    expect(issuedByPreviews).not.toContain("zonal_tsv_issued_by");
   });
 });

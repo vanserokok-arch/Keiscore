@@ -57,7 +57,7 @@ export async function preprocessRoiForOcrWithConfig(
     .toBuffer();
   const processedBuffer = isNarrowTextField(config.field)
     ? await adaptiveThreshold(preThresholdBuffer)
-    : preThresholdBuffer;
+    : await softTextEnhance(preThresholdBuffer);
   const croppedBuffer = await autoCropNonWhite(processedBuffer);
   let pipeline = sharp(croppedBuffer);
 
@@ -74,7 +74,11 @@ export async function preprocessRoiForOcrWithConfig(
     await mkdir(debugRoiDir, { recursive: true });
     const suffix = config.field === undefined ? basename(inputPath) : `post_${config.field}.png`;
     const debugPath = join(debugRoiDir, `${Date.now()}_${suffix}`);
-    await copyFile(outPath, debugPath);
+    try {
+      await copyFile(outPath, debugPath);
+    } catch {
+      // Best-effort debug copy; keep OCR flow unaffected in mocked environments.
+    }
   }
 
   config.logger?.log({
@@ -89,13 +93,36 @@ export async function preprocessRoiForOcrWithConfig(
       minWidth: MIN_WIDTH,
       grayscale: true,
       adaptiveThreshold: isNarrowTextField(config.field),
-      sharpen: "slight",
+      sharpen: isNarrowTextField(config.field) ? "strong-local" : "soft-global",
+      denoise: isNarrowTextField(config.field) ? "none" : "median-1",
       autoCropNonWhite: true,
       narrowTextBoost: isNarrowTextField(config.field)
     }
   });
 
   return outPath;
+}
+
+export async function preprocessMrz(roi: Buffer): Promise<Buffer> {
+  const meta = await sharp(roi).metadata();
+  const width = Math.max(1, meta.width ?? 1);
+  const scaleFactor = width >= 1200 ? 2 : 3;
+  const resized = await sharp(roi)
+    .grayscale()
+    .resize({
+      width: Math.max(width * scaleFactor, 1800),
+      withoutEnlargement: false,
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255 }
+    })
+    .median(1)
+    .png()
+    .toBuffer();
+  const thresholded = await adaptiveThresholdWithConfig(resized, 0.02, 7);
+  return sharp(thresholded)
+    .sharpen({ sigma: 0.9, m1: 0.65, m2: 1.05 })
+    .png()
+    .toBuffer();
 }
 
 function clampPaddingRatio(value: number): number {
@@ -201,6 +228,14 @@ async function centerAndIncreaseHeight(buffer: Buffer): Promise<Buffer> {
 }
 
 async function adaptiveThreshold(buffer: Buffer): Promise<Buffer> {
+  return adaptiveThresholdWithConfig(buffer, 0.03, 9);
+}
+
+async function adaptiveThresholdWithConfig(
+  buffer: Buffer,
+  radiusRatio: number,
+  thresholdDelta: number
+): Promise<Buffer> {
   let width = 1;
   let height = 1;
   let src: Buffer;
@@ -224,7 +259,7 @@ async function adaptiveThreshold(buffer: Buffer): Promise<Buffer> {
       integral[idx] = (integral[idx - (width + 1)] ?? 0) + rowSum;
     }
   }
-  const windowRadius = Math.max(8, Math.round(Math.min(width, height) * 0.03));
+  const windowRadius = Math.max(8, Math.round(Math.min(width, height) * radiusRatio));
   const out = Buffer.alloc(width * height, 255);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -240,10 +275,18 @@ async function adaptiveThreshold(buffer: Buffer): Promise<Buffer> {
         (integral[y1 * (width + 1) + x1] ?? 0);
       const localMean = sum / area;
       const value = sharpened[y * width + x] ?? 255;
-      out[y * width + x] = value < localMean - 9 ? 0 : 255;
+      out[y * width + x] = value < localMean - thresholdDelta ? 0 : 255;
     }
   }
   return sharp(out, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+async function softTextEnhance(buffer: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(buffer).grayscale().median(1).sharpen({ sigma: 0.95, m1: 0.7, m2: 1.05 }).png().toBuffer();
+  } catch {
+    return sharp(buffer).grayscale().png().toBuffer();
+  }
 }
 
 function applySlightSharpen(src: Buffer, width: number, height: number): Buffer {

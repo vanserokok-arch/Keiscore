@@ -137,10 +137,25 @@ export interface FieldReport {
     pass_id: "A" | "B" | "C";
     raw_text_preview: string;
     normalized_preview: string;
+    source?: "roi" | "mrz" | "zonal_tsv" | "page";
     confidence?: number;
     psm?: number;
   }>;
   best_candidate_preview?: string;
+  best_candidate_source?: "roi" | "mrz" | "zonal_tsv" | "page";
+  best_candidate_normalized?: string;
+  debug_candidates?: {
+    source_counts: Record<"roi" | "mrz" | "zonal_tsv" | "page", number>;
+    top_candidates: Array<{
+      raw_preview: string;
+      normalized_preview: string;
+      confidence: number;
+      psm: number | null;
+      source: "roi" | "mrz" | "zonal_tsv" | "page";
+      validator_passed: boolean;
+      rejection_reason: string | null;
+    }>;
+  };
 }
 
 export interface ExtractionResult {
@@ -158,6 +173,23 @@ export interface ExtractionResult {
   diagnostics?: {
     central_window_text_preview?: string;
     normalization?: NormalizedInput["preprocessing"];
+    field_debug?: Partial<
+      Record<
+        "fio" | "issued_by",
+        {
+          source_counts: Record<"roi" | "mrz" | "zonal_tsv" | "page", number>;
+          top_candidates: Array<{
+            raw_preview: string;
+            normalized_preview: string;
+            confidence: number;
+            psm: number | null;
+            source: "roi" | "mrz" | "zonal_tsv" | "page";
+            validator_passed: boolean;
+            rejection_reason: string | null;
+          }>;
+        }
+      >
+    >;
   };
   field_reports: FieldReport[];
   errors: CoreError[];
@@ -190,6 +222,13 @@ export interface NormalizedInput {
     applied: boolean;
     selectedThreshold: number;
     cropBbox?: RoiRect;
+    content_bbox?: RoiRect;
+    passport_bbox?: RoiRect;
+    applied_padding?: number;
+    final_size?: {
+      width: number;
+      height: number;
+    };
     rotationDeg: 0 | 90 | 180 | 270;
     orientationScore: number;
     deskewAngleDeg: number;
@@ -261,6 +300,7 @@ export interface OcrPassResult {
   engine_used: "online" | "tesseract";
   raw_text?: string;
   normalized_text?: string;
+  source?: "roi" | "mrz" | "zonal_tsv" | "page";
   psm?: number;
   postprocessed_roi_image_path?: string;
 }
@@ -348,12 +388,36 @@ export const FieldReportSchema = z.object({
         pass_id: z.enum(["A", "B", "C"]),
         raw_text_preview: z.string(),
         normalized_preview: z.string(),
+        source: z.enum(["roi", "mrz", "zonal_tsv", "page"]).optional(),
         confidence: z.number().min(0).max(1).optional(),
         psm: z.number().optional()
       })
     )
     .optional(),
-  best_candidate_preview: z.string().optional()
+  best_candidate_preview: z.string().optional(),
+  best_candidate_source: z.enum(["roi", "mrz", "zonal_tsv", "page"]).optional(),
+  best_candidate_normalized: z.string().optional(),
+  debug_candidates: z
+    .object({
+      source_counts: z.object({
+        roi: z.number(),
+        mrz: z.number(),
+        zonal_tsv: z.number(),
+        page: z.number()
+      }),
+      top_candidates: z.array(
+        z.object({
+          raw_preview: z.string(),
+          normalized_preview: z.string(),
+          confidence: z.number(),
+          psm: z.number().nullable(),
+          source: z.enum(["roi", "mrz", "zonal_tsv", "page"]),
+          validator_passed: z.boolean(),
+          rejection_reason: z.string().nullable()
+        })
+      )
+    })
+    .optional()
 });
 
 export const ExtractionResultSchema = z.object({
@@ -384,11 +448,83 @@ export const ExtractionResultSchema = z.object({
               page: z.number()
             })
             .optional(),
+          content_bbox: z
+            .object({
+              x: z.number(),
+              y: z.number(),
+              width: z.number(),
+              height: z.number(),
+              page: z.number()
+            })
+            .optional(),
+          passport_bbox: z
+            .object({
+              x: z.number(),
+              y: z.number(),
+              width: z.number(),
+              height: z.number(),
+              page: z.number()
+            })
+            .optional(),
+          applied_padding: z.number().optional(),
+          final_size: z
+            .object({
+              width: z.number(),
+              height: z.number()
+            })
+            .optional(),
           rotationDeg: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
           orientationScore: z.number(),
           deskewAngleDeg: z.number(),
           blackPixelRatio: z.number()
         })
+        .optional(),
+      field_debug: z
+        .object({
+          fio: z
+            .object({
+              source_counts: z.object({
+                roi: z.number(),
+                mrz: z.number(),
+                zonal_tsv: z.number(),
+                page: z.number()
+              }),
+              top_candidates: z.array(
+                z.object({
+                  raw_preview: z.string(),
+                  normalized_preview: z.string(),
+                  confidence: z.number(),
+                  psm: z.number().nullable(),
+                  source: z.enum(["roi", "mrz", "zonal_tsv", "page"]),
+                  validator_passed: z.boolean(),
+                  rejection_reason: z.string().nullable()
+                })
+              )
+            })
+            .optional(),
+          issued_by: z
+            .object({
+              source_counts: z.object({
+                roi: z.number(),
+                mrz: z.number(),
+                zonal_tsv: z.number(),
+                page: z.number()
+              }),
+              top_candidates: z.array(
+                z.object({
+                  raw_preview: z.string(),
+                  normalized_preview: z.string(),
+                  confidence: z.number(),
+                  psm: z.number().nullable(),
+                  source: z.enum(["roi", "mrz", "zonal_tsv", "page"]),
+                  validator_passed: z.boolean(),
+                  rejection_reason: z.string().nullable()
+                })
+              )
+            })
+            .optional()
+        })
+        .partial()
         .optional()
     })
     .optional(),

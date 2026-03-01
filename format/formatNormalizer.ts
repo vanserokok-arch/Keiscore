@@ -113,6 +113,11 @@ export class FormatNormalizer {
             }
           : await inferImageGeometry(normalizedBuffer, inferred.width, inferred.height);
       const skewAngleDeg = normalizedImage.preprocessing?.deskewAngleDeg ?? inferred.skewAngleDeg;
+      const normalizedGeometry = await inferImageGeometry(
+        normalizedBuffer,
+        imageGeometry.width,
+        imageGeometry.height
+      );
       const warnings =
         quality_metrics.blur_score < 0.15
           ? [
@@ -134,23 +139,35 @@ export class FormatNormalizer {
             height: Math.max(1, page.height || fallbackHeight)
           })) ?? [];
         const firstPage = pages[0];
+        const syncedFirstPage =
+          firstPage === undefined
+            ? { pageNumber: 1, imagePath: null, width: normalizedGeometry.width, height: normalizedGeometry.height }
+            : { ...firstPage, width: normalizedGeometry.width, height: normalizedGeometry.height };
         return {
           original: input,
           mime,
           kind: "pdf",
-          pages,
+          pages: firstPage === undefined ? [syncedFirstPage] : [syncedFirstPage, ...pages.slice(1)],
           sourcePath: input.path,
           fileName,
           buffer: fileBuffer,
           normalizedBuffer,
-          width: firstPage?.width ?? imageGeometry.width,
-          height: firstPage?.height ?? imageGeometry.height,
+          width: syncedFirstPage.width,
+          height: syncedFirstPage.height,
           quality_metrics,
           warnings,
           skewAngleDeg,
           ...(normalizedImage.preprocessing === undefined
             ? {}
-            : { preprocessing: normalizedImage.preprocessing }),
+            : {
+                preprocessing: {
+                  ...normalizedImage.preprocessing,
+                  final_size: {
+                    width: syncedFirstPage.width,
+                    height: syncedFirstPage.height
+                  }
+                }
+              }),
           ...(mockLayout === undefined ? {} : { mockLayout })
         };
       }
@@ -163,22 +180,30 @@ export class FormatNormalizer {
           {
             pageNumber: 1,
             imagePath: null,
-            width: imageGeometry.width,
-            height: imageGeometry.height
+            width: normalizedGeometry.width,
+            height: normalizedGeometry.height
           }
         ],
         sourcePath: input.path,
         fileName,
         buffer: fileBuffer,
         normalizedBuffer,
-        width: imageGeometry.width,
-        height: imageGeometry.height,
+        width: normalizedGeometry.width,
+        height: normalizedGeometry.height,
         quality_metrics,
         warnings,
         skewAngleDeg,
         ...(normalizedImage.preprocessing === undefined
           ? {}
-          : { preprocessing: normalizedImage.preprocessing }),
+          : {
+              preprocessing: {
+                ...normalizedImage.preprocessing,
+                final_size: {
+                  width: normalizedGeometry.width,
+                  height: normalizedGeometry.height
+                }
+              }
+            }),
         ...(mockLayout === undefined ? {} : { mockLayout })
       };
     }
@@ -218,6 +243,11 @@ export class FormatNormalizer {
           }
         : await inferImageGeometry(normalizedBuffer, inferred.width, inferred.height);
     const skewAngleDeg = normalizedImage.preprocessing?.deskewAngleDeg ?? inferred.skewAngleDeg;
+    const normalizedGeometry = await inferImageGeometry(
+      normalizedBuffer,
+      imageGeometry.width,
+      imageGeometry.height
+    );
     const warnings =
       quality_metrics.blur_score < 0.15
         ? [
@@ -239,23 +269,35 @@ export class FormatNormalizer {
           height: Math.max(1, page.height || fallbackHeight)
         })) ?? [];
       const firstPage = pages[0];
+      const syncedFirstPage =
+        firstPage === undefined
+          ? { pageNumber: 1, imagePath: null, width: normalizedGeometry.width, height: normalizedGeometry.height }
+          : { ...firstPage, width: normalizedGeometry.width, height: normalizedGeometry.height };
       return {
         original: input,
         mime,
         kind: "pdf",
-        pages,
+        pages: firstPage === undefined ? [syncedFirstPage] : [syncedFirstPage, ...pages.slice(1)],
         sourcePath: null,
         fileName: input.filename,
         buffer: input.data,
         normalizedBuffer,
-        width: firstPage?.width ?? imageGeometry.width,
-        height: firstPage?.height ?? imageGeometry.height,
+        width: syncedFirstPage.width,
+        height: syncedFirstPage.height,
         quality_metrics,
         warnings,
         skewAngleDeg,
         ...(normalizedImage.preprocessing === undefined
           ? {}
-          : { preprocessing: normalizedImage.preprocessing }),
+          : {
+              preprocessing: {
+                ...normalizedImage.preprocessing,
+                final_size: {
+                  width: syncedFirstPage.width,
+                  height: syncedFirstPage.height
+                }
+              }
+            }),
         ...(mockLayout === undefined ? {} : { mockLayout })
       };
     }
@@ -268,22 +310,30 @@ export class FormatNormalizer {
         {
           pageNumber: 1,
           imagePath: null,
-          width: imageGeometry.width,
-          height: imageGeometry.height
+          width: normalizedGeometry.width,
+          height: normalizedGeometry.height
         }
       ],
       sourcePath: null,
       fileName: input.filename,
       buffer: input.data,
       normalizedBuffer,
-      width: imageGeometry.width,
-      height: imageGeometry.height,
+      width: normalizedGeometry.width,
+      height: normalizedGeometry.height,
       quality_metrics,
       warnings,
       skewAngleDeg,
       ...(normalizedImage.preprocessing === undefined
         ? {}
-        : { preprocessing: normalizedImage.preprocessing }),
+        : {
+            preprocessing: {
+              ...normalizedImage.preprocessing,
+              final_size: {
+                width: normalizedGeometry.width,
+                height: normalizedGeometry.height
+              }
+            }
+          }),
       ...(mockLayout === undefined ? {} : { mockLayout })
     };
   }
@@ -542,7 +592,7 @@ async function preprocessRasterPage(
   const deskew = await estimateDeskewAngle(oriented);
   const deskewed = Math.abs(deskew) < 0.05 ? oriented : await rotateFloatWithWhiteBg(oriented, -deskew);
   const crop = await computeAdaptiveContentCrop(deskewed);
-  const cropped =
+  const contentCropped =
     crop.bbox === null
       ? deskewed
       : await sharp(deskewed)
@@ -554,8 +604,34 @@ async function preprocessRasterPage(
           })
           .png()
           .toBuffer();
+  const passportCrop = await computePassportForegroundCrop(contentCropped, crop.threshold);
+  const passportTrimmed =
+    passportCrop.bbox === null
+      ? null
+      : await trimPassportTailByDensity(contentCropped, passportCrop.bbox, passportCrop.threshold);
+  const passportBbox = passportTrimmed ?? passportCrop.bbox;
+  const cropped =
+    passportBbox === null
+      ? contentCropped
+      : await sharp(contentCropped)
+          .extract({
+            left: passportBbox.x,
+            top: passportBbox.y,
+            width: passportBbox.width,
+            height: passportBbox.height
+          })
+          .png()
+          .toBuffer();
+  const croppedMeta = await sharp(cropped).metadata();
+  const finalWidth = Math.max(1, croppedMeta.width ?? 1);
+  const finalHeight = Math.max(1, croppedMeta.height ?? 1);
   const preprocessing: NormalizedInput["preprocessing"] = {
-    applied: orientation.rotationDeg !== 0 || Math.abs(deskew) >= 0.05 || crop.bbox !== null,
+    applied:
+      orientation.rotationDeg !== 0 ||
+      Math.abs(deskew) >= 0.05 ||
+      crop.bbox !== null ||
+      passportCrop.bbox !== null ||
+      passportBbox !== null,
     selectedThreshold: crop.threshold,
     rotationDeg: orientation.rotationDeg,
     orientationScore: orientation.score,
@@ -568,7 +644,47 @@ async function preprocessRasterPage(
             ...crop.bbox,
             page: 0
           }
-        })
+        }),
+    ...(crop.bbox === null
+      ? {}
+      : {
+          content_bbox: {
+            ...crop.bbox,
+            page: 0
+          }
+        }),
+    ...(passportBbox === null
+      ? {}
+      : {
+          passport_bbox: {
+            x: 0,
+            y: 0,
+            width: finalWidth,
+            height: finalHeight,
+            page: 0
+          }
+        }),
+    ...(passportCrop.bbox === null
+      ? {}
+      : {
+          passport_bbox_before_trim: {
+            ...passportCrop.bbox,
+            page: 0
+          }
+        }),
+    ...(passportTrimmed === null
+      ? {}
+      : {
+          passport_bbox_after_trim: {
+            ...passportTrimmed,
+            page: 0
+          }
+        }),
+    applied_padding: passportCrop.padding,
+    final_size: {
+      width: finalWidth,
+      height: finalHeight
+    }
   };
   logger?.log({
     ts: Date.now(),
@@ -578,6 +694,135 @@ async function preprocessRasterPage(
     data: preprocessing
   });
   return { buffer: cropped, preprocessing };
+}
+
+async function computePassportForegroundCrop(
+  source: Buffer,
+  thresholdHint: number
+): Promise<{ bbox: Omit<RoiRect, "page"> | null; threshold: number; padding: number }> {
+  const resized = await sharp(source)
+    .resize({ width: 1600, withoutEnlargement: true })
+    .grayscale()
+    .median(1)
+    .raw()
+    .toBuffer({
+      resolveWithObject: true
+    });
+  const { data, info } = resized;
+  const all = Math.max(1, info.width * info.height);
+  const dark240 = countBelowThreshold(data, 240);
+  const threshold = thresholdHint >= 245 || dark240 / all > 0.09 ? 245 : 240;
+  const largest = findLargestComponentBbox(data, info.width, info.height, threshold);
+  if (largest === null) {
+    return { bbox: null, threshold, padding: 0 };
+  }
+  const trimmed = trimBboxByDensity(data, info.width, info.height, threshold, largest);
+  const projected = computeProjectionBbox(data, info.width, info.height, threshold);
+  const target = chooseTighterPassportBox(largest, trimmed, projected);
+  const componentAreaRatio = target.area / all;
+  if (componentAreaRatio < 0.03) {
+    return { bbox: null, threshold, padding: 0 };
+  }
+  const sourceMeta = await sharp(source).metadata();
+  const fullW = Math.max(1, sourceMeta.width ?? info.width);
+  const fullH = Math.max(1, sourceMeta.height ?? info.height);
+  const scaleX = fullW / info.width;
+  const scaleY = fullH / info.height;
+  const rawLeft = Math.floor(target.x * scaleX);
+  const rawTop = Math.floor(target.y * scaleY);
+  const rawRight = Math.ceil((target.x + target.width) * scaleX);
+  const rawBottom = Math.ceil((target.y + target.height) * scaleY);
+  const padding = clampInt(Math.round(Math.min(fullW, fullH) * 0.012), 8, 44);
+  const left = clampInt(rawLeft - padding, 0, fullW - 1);
+  const top = clampInt(rawTop - padding, 0, fullH - 1);
+  const right = clampInt(rawRight + padding, left + 1, fullW);
+  const bottom = clampInt(rawBottom + padding, top + 1, fullH);
+  const bbox = { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  const areaRatio = (bbox.width * bbox.height) / (fullW * fullH);
+  if (areaRatio < 0.2 || areaRatio > 0.99) {
+    return { bbox: null, threshold, padding };
+  }
+  return { bbox, threshold, padding };
+}
+
+async function trimPassportTailByDensity(
+  source: Buffer,
+  bbox: Omit<RoiRect, "page">,
+  threshold: number
+): Promise<Omit<RoiRect, "page">> {
+  const raw = await sharp(source).grayscale().raw().toBuffer({ resolveWithObject: true });
+  const imageW = Math.max(1, raw.info.width);
+  const imageH = Math.max(1, raw.info.height);
+  const left = clampInt(bbox.x, 0, imageW - 1);
+  const top = clampInt(bbox.y, 0, imageH - 1);
+  const right = clampInt(bbox.x + bbox.width - 1, left, imageW - 1);
+  const bottom = clampInt(bbox.y + bbox.height - 1, top, imageH - 1);
+  const localWidth = right - left + 1;
+  const localHeight = bottom - top + 1;
+  if (localWidth < 20 || localHeight < 20) {
+    return bbox;
+  }
+  const densityEps = 0.002;
+  const minColRun = clampInt(Math.round(imageW * 0.045), 100, 200);
+  const minRowRun = clampInt(Math.round(imageH * 0.045), 100, 200);
+
+  const trimRightCols = detectTrailingLowDensityRun({
+    start: right,
+    end: left,
+    minRun: Math.min(minColRun, Math.floor(localWidth * 0.45)),
+    sampleSize: localHeight,
+    densityEps,
+    measureDensity: (x) =>
+      countDarkInColumn(raw.data, imageW, imageH, x, top, bottom, threshold) / Math.max(1, localHeight)
+  });
+  const trimBottomRows = detectTrailingLowDensityRun({
+    start: bottom,
+    end: top,
+    minRun: Math.min(minRowRun, Math.floor(localHeight * 0.45)),
+    sampleSize: localWidth,
+    densityEps,
+    measureDensity: (y) => countDarkInRow(raw.data, imageW, left, right, y, threshold) / Math.max(1, localWidth)
+  });
+
+  const trimmedRight = Math.max(left, right - trimRightCols);
+  const trimmedBottom = Math.max(top, bottom - trimBottomRows);
+  const trimmed = {
+    x: left,
+    y: top,
+    width: Math.max(1, trimmedRight - left + 1),
+    height: Math.max(1, trimmedBottom - top + 1)
+  };
+  if (trimmed.width < Math.round(localWidth * 0.55) || trimmed.height < Math.round(localHeight * 0.55)) {
+    return bbox;
+  }
+  return trimmed;
+}
+
+function detectTrailingLowDensityRun(params: {
+  start: number;
+  end: number;
+  minRun: number;
+  sampleSize: number;
+  densityEps: number;
+  measureDensity: (index: number) => number;
+}): number {
+  const { start, end, minRun, densityEps, measureDensity } = params;
+  if (minRun <= 0 || start <= end) {
+    return 0;
+  }
+  let trailingRun = 0;
+  for (let i = start; i >= end; i -= 1) {
+    const density = measureDensity(i);
+    if (density < densityEps) {
+      trailingRun += 1;
+      continue;
+    }
+    if (trailingRun >= minRun) {
+      return trailingRun;
+    }
+    trailingRun = 0;
+  }
+  return trailingRun >= minRun ? trailingRun : 0;
 }
 
 async function chooseOrientation(
@@ -729,6 +974,209 @@ function computeNonWhiteBboxFromRaw(
     return null;
   }
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+function findLargestComponentBbox(
+  raw: Buffer,
+  width: number,
+  height: number,
+  threshold: number
+): (Omit<RoiRect, "page"> & { area: number }) | null {
+  const total = width * height;
+  if (total <= 0) {
+    return null;
+  }
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let best: (Omit<RoiRect, "page"> & { area: number }) | null = null;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = y * width + x;
+      if (visited[idx] === 1) {
+        continue;
+      }
+      visited[idx] = 1;
+      if ((raw[idx] ?? 255) >= threshold) {
+        continue;
+      }
+      let head = 0;
+      let tail = 0;
+      queue[tail] = idx;
+      tail += 1;
+      let minX = x;
+      let minY = y;
+      let maxX = x;
+      let maxY = y;
+      let area = 0;
+      while (head < tail) {
+        const current = queue[head] ?? 0;
+        head += 1;
+        const cx = current % width;
+        const cy = Math.floor(current / width);
+        area += 1;
+        if (cx < minX) minX = cx;
+        if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy;
+        if (cy > maxY) maxY = cy;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (dx === 0 && dy === 0) {
+              continue;
+            }
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+              continue;
+            }
+            const nIdx = ny * width + nx;
+            if (visited[nIdx] === 1) {
+              continue;
+            }
+            visited[nIdx] = 1;
+            if ((raw[nIdx] ?? 255) >= threshold) {
+              continue;
+            }
+            queue[tail] = nIdx;
+            tail += 1;
+          }
+        }
+      }
+      const component = {
+        x: minX,
+        y: minY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+        area
+      };
+      if (best === null || component.area > best.area) {
+        best = component;
+      }
+    }
+  }
+  return best;
+}
+
+function trimBboxByDensity(
+  raw: Buffer,
+  width: number,
+  height: number,
+  threshold: number,
+  bbox: Omit<RoiRect, "page"> & { area: number }
+): (Omit<RoiRect, "page"> & { area: number }) | null {
+  const minDarkPerCol = Math.max(2, Math.round(bbox.height * 0.01));
+  const minDarkPerRow = Math.max(2, Math.round(bbox.width * 0.005));
+  let left = bbox.x;
+  let right = bbox.x + bbox.width - 1;
+  let top = bbox.y;
+  let bottom = bbox.y + bbox.height - 1;
+  while (left < right && countDarkInColumn(raw, width, height, left, top, bottom, threshold) < minDarkPerCol) {
+    left += 1;
+  }
+  while (right > left && countDarkInColumn(raw, width, height, right, top, bottom, threshold) < minDarkPerCol) {
+    right -= 1;
+  }
+  while (top < bottom && countDarkInRow(raw, width, left, right, top, threshold) < minDarkPerRow) {
+    top += 1;
+  }
+  while (bottom > top && countDarkInRow(raw, width, left, right, bottom, threshold) < minDarkPerRow) {
+    bottom -= 1;
+  }
+  if (right <= left || bottom <= top) {
+    return null;
+  }
+  return {
+    x: left,
+    y: top,
+    width: right - left + 1,
+    height: bottom - top + 1,
+    area: (right - left + 1) * (bottom - top + 1)
+  };
+}
+
+function computeProjectionBbox(
+  raw: Buffer,
+  width: number,
+  height: number,
+  threshold: number
+): (Omit<RoiRect, "page"> & { area: number }) | null {
+  const minDarkPerCol = Math.max(3, Math.round(height * 0.015));
+  const minDarkPerRow = Math.max(3, Math.round(width * 0.007));
+  let left = 0;
+  let right = width - 1;
+  let top = 0;
+  let bottom = height - 1;
+  while (left < right && countDarkInColumn(raw, width, height, left, 0, height - 1, threshold) < minDarkPerCol) {
+    left += 1;
+  }
+  while (right > left && countDarkInColumn(raw, width, height, right, 0, height - 1, threshold) < minDarkPerCol) {
+    right -= 1;
+  }
+  while (top < bottom && countDarkInRow(raw, width, left, right, top, threshold) < minDarkPerRow) {
+    top += 1;
+  }
+  while (bottom > top && countDarkInRow(raw, width, left, right, bottom, threshold) < minDarkPerRow) {
+    bottom -= 1;
+  }
+  if (right <= left || bottom <= top) {
+    return null;
+  }
+  return {
+    x: left,
+    y: top,
+    width: right - left + 1,
+    height: bottom - top + 1,
+    area: (right - left + 1) * (bottom - top + 1)
+  };
+}
+
+function chooseTighterPassportBox(
+  largest: Omit<RoiRect, "page"> & { area: number },
+  trimmed: (Omit<RoiRect, "page"> & { area: number }) | null,
+  projected: (Omit<RoiRect, "page"> & { area: number }) | null
+): Omit<RoiRect, "page"> & { area: number } {
+  const candidates = [largest, trimmed, projected].filter((item): item is Omit<RoiRect, "page"> & { area: number } =>
+    item !== null
+  );
+  return candidates.sort((a, b) => a.area - b.area)[0] ?? largest;
+}
+
+function countDarkInColumn(
+  raw: Buffer,
+  width: number,
+  height: number,
+  x: number,
+  top: number,
+  bottom: number,
+  threshold: number
+): number {
+  if (x < 0 || x >= width) {
+    return 0;
+  }
+  let count = 0;
+  const y1 = Math.max(0, top);
+  const y2 = Math.min(height - 1, bottom);
+  for (let y = y1; y <= y2; y += 1) {
+    if ((raw[y * width + x] ?? 255) < threshold) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function countDarkInRow(raw: Buffer, width: number, left: number, right: number, y: number, threshold: number): number {
+  if (y < 0) {
+    return 0;
+  }
+  let count = 0;
+  const x1 = Math.max(0, left);
+  const x2 = Math.max(x1, right);
+  const row = y * width;
+  for (let x = x1; x <= x2; x += 1) {
+    if ((raw[row + x] ?? 255) < threshold) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 async function rotateWithWhiteBg(source: Buffer, deg: 0 | 90 | 180 | 270): Promise<Buffer> {

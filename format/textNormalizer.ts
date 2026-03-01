@@ -90,6 +90,8 @@ export function normalizeFioCandidate(input: string): string | null {
     .trim();
   const stopFragments = [
     "ФАМИ",
+    "ФИИЯ",
+    "МИЛИЯ",
     "ИМЯ",
     "ОТЧЕ",
     "ОТСТВ",
@@ -113,13 +115,40 @@ export function normalizeFioCandidate(input: string): string | null {
     return null;
   }
   if (words.length > 3) {
+    let bestTriple: string[] | null = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
     for (let i = 0; i <= words.length - 3; i += 1) {
       const triple = words.slice(i, i + 3);
-      if (triple.every((word) => word.length >= 3)) {
-        return triple.join(" ");
+      if (!triple.every((word) => word.length >= 3)) {
+        continue;
       }
+      const score = scoreFioTriple(triple);
+      if (score > bestScore) {
+        bestTriple = triple;
+        bestScore = score;
+      }
+    }
+    if (bestTriple !== null) {
+      return bestTriple.join(" ");
     }
     return words.slice(0, 3).join(" ");
   }
   return words.join(" ");
+}
+
+function scoreFioTriple(parts: string[]): number {
+  const surname = parts[0] ?? "";
+  const name = parts[1] ?? "";
+  const patronymic = parts[2] ?? "";
+  let score = 0;
+  score += Math.min(8, surname.length);
+  score += Math.min(6, name.length);
+  score += Math.min(10, patronymic.length);
+  if (/(ОВИЧ|ЕВИЧ|ИЧ|ИЧНА|ОВНА|ЕВНА|ВНА)$/u.test(patronymic)) {
+    score += 12;
+  }
+  if (/(ЧИИ|ИИИ|ННН|ШШШ)$/u.test(`${surname} ${name} ${patronymic}`)) {
+    score -= 30;
+  }
+  return score;
 }

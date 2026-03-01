@@ -32,6 +32,19 @@ type FieldRoiWithAuditContext = FieldRoi & {
   _roiMapperContext?: RoiAuditContext;
 };
 
+type RoiClampAudit = {
+  outOfBoundsBeforeClamp: boolean;
+  clampApplied: boolean;
+  areaBeforeClamp: number;
+  areaAfterClamp: number;
+  marginsBeforeClamp: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
+};
+
 export class DynamicROIMapper {
   static async map(
     input: NormalizedInput,
@@ -40,15 +53,22 @@ export class DynamicROIMapper {
     anchors: AnchorResult,
     logger: AuditLogger
   ): Promise<FieldRoi[]> {
-    const width = calibration.alignedWidth;
-    const height = calibration.alignedHeight;
+    const metadata = input.normalizedBuffer === null ? null : await sharp(input.normalizedBuffer).metadata();
+    const width = Math.max(
+      1,
+      input.preprocessing?.final_size?.width ?? metadata?.width ?? input.width ?? calibration.alignedWidth
+    );
+    const height = Math.max(
+      1,
+      input.preprocessing?.final_size?.height ?? metadata?.height ?? input.height ?? calibration.alignedHeight
+    );
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
       const coreError: CoreError = {
         code: "DOCUMENT_NOT_DETECTED",
         message: "Cannot map ROI because normalized page dimensions are invalid.",
         details: {
-          alignedWidth: calibration.alignedWidth,
-          alignedHeight: calibration.alignedHeight,
+          width,
+          height,
           source: input.fileName
         }
       };
@@ -61,18 +81,13 @@ export class DynamicROIMapper {
     const lineHeight = Math.max(24, anchors.lineHeight || 40);
     const snapY = (y: number) => snapToTextLine(y, anchors.textLineYs, lineHeight);
 
-    const makePercent = (x1: number, y1: number, x2: number, y2: number) =>
-      clampRoi(
-        {
-          x: Math.round(width * x1),
-          y: Math.round(height * y1),
-          width: Math.round(width * (x2 - x1)),
-          height: Math.round(height * (y2 - y1)),
-          page
-        },
-        width,
-        height
-      );
+    const makePercent = (x1: number, y1: number, x2: number, y2: number): FieldRoi["roi"] => ({
+      x: Math.round(width * x1),
+      y: Math.round(height * y1),
+      width: Math.round(width * (x2 - x1)),
+      height: Math.round(height * (y2 - y1)),
+      page
+    });
 
     const anchor = (name: string) => anchorsMap[name.toUpperCase()];
     const fallbackReasons: string[] = [];
@@ -85,144 +100,82 @@ export class DynamicROIMapper {
     const isSpreadPage = anchors.pageType === "spread_page";
     const fioRoi = isSpreadPage
       ? fioAnchor === undefined
-        ? makePercent(0.07, 0.2, 0.49, 0.35)
-        : clampRoi(
-            {
-              x: Math.round(Math.max(width * 0.07, fioAnchor.x - lineHeight * 0.35)),
-              y: Math.round(Math.max(height * 0.17, fioAnchor.y - lineHeight * 0.3)),
-              width: Math.round(Math.min(width * 0.43, width * 0.5 - (fioAnchor.x - lineHeight * 0.35))),
-              height: Math.round(lineHeight * 3.3),
-              page
-            },
-            width,
-            height
-          )
+        ? makePercent(0.2, 0.37, 0.74, 0.61)
+        : {
+            x: Math.round(Math.max(width * 0.2, fioAnchor.x + lineHeight * 1.6)),
+            y: Math.round(Math.max(height * 0.35, fioAnchor.y - lineHeight * 0.1)),
+            width: Math.round(Math.min(width * 0.54, lineHeight * 22)),
+            height: Math.round(Math.max(lineHeight * 6.2, height * 0.17)),
+            page
+          }
       : fioAnchor === undefined
         ? makePercent(0.18, 0.36, 0.88, 0.56)
-        : clampRoi(
-            {
-              x: fioAnchor.x,
-              y: fioAnchor.y,
-              width: Math.round(width * 0.7),
-              height: Math.round(lineHeight * 3),
-              page
-            },
-            width,
-            height
-          );
+        : {
+            x: fioAnchor.x,
+            y: fioAnchor.y,
+            width: Math.round(width * 0.7),
+            height: Math.round(lineHeight * 3),
+            page
+          };
     if (fioAnchor === undefined) fallbackReasons.push("fio_anchor_missing");
 
     const passportNumberRoi = isSpreadPage
       ? deptAnchor === undefined
-        ? makePercent(0.6, 0.22, 0.95, 0.35)
-        : clampRoi(
-            {
-              x: Math.round(Math.max(width * 0.58, deptAnchor.x + lineHeight * 1.9)),
-              y: snapY(
-                Math.round(Math.max(height * 0.1, Math.min(height * 0.3, deptAnchor.y - lineHeight * 5.1)))
-              ),
-              width: Math.round(Math.max(width * 0.34, lineHeight * 9.8)),
-              height: Math.round(lineHeight * 2.4),
-              page
-            },
-            width,
-            height
-          )
+        ? makePercent(0.61, 0.2, 0.95, 0.35)
+        : {
+            x: Math.round(Math.max(width * 0.58, deptAnchor.x + lineHeight * 1.9)),
+            y: snapY(
+              Math.round(Math.max(height * 0.1, Math.min(height * 0.3, deptAnchor.y - lineHeight * 5.1)))
+            ),
+            width: Math.round(Math.max(width * 0.32, lineHeight * 9.8)),
+            height: Math.round(lineHeight * 2.6),
+            page
+          }
       : deptAnchor === undefined
         ? makePercent(0.55, 0.04, 0.92, 0.18)
-        : clampRoi(
-            {
-              x: Math.round(deptAnchor.x + lineHeight * 2.2),
-              y: Math.max(0, Math.round(deptAnchor.y - lineHeight * 2.1)),
-              width: Math.round(width * 0.3),
-              height: Math.round(lineHeight * 1.7),
-              page
-            },
-            width,
-            height
-          );
+        : {
+            x: Math.round(deptAnchor.x + lineHeight * 2.2),
+            y: Math.max(0, Math.round(deptAnchor.y - lineHeight * 2.1)),
+            width: Math.round(width * 0.3),
+            height: Math.round(lineHeight * 1.7),
+            page
+          };
     if (deptAnchor === undefined) fallbackReasons.push("dept_anchor_missing_for_passport_number");
 
     const deptCodeRoi = isSpreadPage
       ? deptAnchor === undefined
         ? makePercent(0.63, 0.36, 0.9, 0.47)
-        : clampRoi(
-            {
-              x: Math.round(Math.max(width * 0.6, deptAnchor.x + lineHeight * 6.8)),
-              y: snapY(Math.round(Math.max(height * 0.34, deptAnchor.y + lineHeight * 0.6))),
-              width: Math.round(lineHeight * 10.2),
-              height: Math.round(lineHeight * 1.9),
-              page
-            },
-            width,
-            height
-          )
+        : {
+            x: Math.round(Math.max(width * 0.6, deptAnchor.x + lineHeight * 6.4)),
+            y: snapY(Math.round(Math.max(height * 0.34, deptAnchor.y + lineHeight * 0.6))),
+            width: Math.round(lineHeight * 8.8),
+            height: Math.round(lineHeight * 1.8),
+            page
+          }
       : deptAnchor === undefined
         ? makePercent(0.42, 0.52, 0.7, 0.62)
-        : clampRoi(
-            {
-              x: Math.round(deptAnchor.x + lineHeight * 4.2),
-              y: deptAnchor.y,
-              width: Math.round(lineHeight * 5.2),
-              height: Math.round(lineHeight * 1.2),
-              page
-            },
-            width,
-            height
-          );
+        : {
+            x: Math.round(deptAnchor.x + lineHeight * 4.2),
+            y: deptAnchor.y,
+            width: Math.round(lineHeight * 5.2),
+            height: Math.round(lineHeight * 1.2),
+            page
+          };
 
-    const issuedByRoi = isSpreadPage
-      ? issuedAnchor === undefined
-        ? makePercent(0.56, 0.49, 0.95, 0.69)
-        : clampRoi(
-            {
-              x: Math.round(Math.max(width * 0.56, issuedAnchor.x - lineHeight * 0.2)),
-              y: snapY(Math.round(Math.max(height * 0.46, issuedAnchor.y + lineHeight * 0.8))),
-              width: Math.round(width * 0.4),
-              height: Math.round(
-                Math.max(
-                  lineHeight * 4.2,
-                  Math.min(
-                    lineHeight * 5.6,
-                    height * 0.76 - Math.max(height * 0.47, issuedAnchor.y + lineHeight * 0.8)
-                  )
-                )
-              ),
-              page
-            },
-            width,
-            height
-          )
-      : issuedAnchor === undefined
-        ? makePercent(0.12, 0.6, 0.88, 0.78)
-        : clampRoi(
-            {
-              x: Math.round(width * 0.12),
-              y: Math.round(issuedAnchor.y + lineHeight * 1.2),
-              width: Math.round(width * 0.76),
-              height: Math.round(lineHeight * 3),
-              page
-            },
-            width,
-            height
-          );
+    const issuedByRoi = makePercent(0.45, 0.34, 0.97, 0.58);
     if (issuedAnchor === undefined) fallbackReasons.push("issued_anchor_missing");
 
     const registrationRoi =
       anchors.pageType === "registration_page"
         ? registrationAnchor === undefined
           ? makePercent(0.08, 0.32, 0.92, 0.92)
-          : clampRoi(
-              {
-                x: Math.round(width * 0.08),
-                y: Math.round(registrationAnchor.y + lineHeight * 1.1),
-                width: Math.round(width * 0.84),
-                height: Math.round(height - (registrationAnchor.y + lineHeight * 1.3)),
-                page
-              },
-              width,
-              height
-            )
+          : {
+              x: Math.round(width * 0.08),
+              y: Math.round(registrationAnchor.y + lineHeight * 1.1),
+              width: Math.round(width * 0.84),
+              height: Math.round(height - (registrationAnchor.y + lineHeight * 1.3)),
+              page
+            }
         : makePercent(0.08, 0.78, 0.92, 0.94);
     if (anchors.pageType === "registration_page" && registrationAnchor === undefined) {
       fallbackReasons.push("registration_anchor_missing");
@@ -236,15 +189,38 @@ export class DynamicROIMapper {
       ...(anchors.textLineYs === undefined ? {} : { textLineYs: anchors.textLineYs })
     };
 
-    const rois: FieldRoiWithAuditContext[] = [
+    const rawRois: FieldRoiWithAuditContext[] = [
       { field: "fio", roi: fioRoi, _roiMapperContext: roiMapperContext },
       { field: "passport_number", roi: passportNumberRoi, _roiMapperContext: roiMapperContext },
       { field: "issued_by", roi: issuedByRoi, _roiMapperContext: roiMapperContext },
       { field: "dept_code", roi: deptCodeRoi, _roiMapperContext: roiMapperContext },
       { field: "registration", roi: registrationRoi, _roiMapperContext: roiMapperContext }
     ];
+    const rois: FieldRoiWithAuditContext[] = rawRois.map((fieldRoi) => ({
+      ...fieldRoi,
+      roi: clampRoiWithAudit(fieldRoi.roi, width, height).roi
+    }));
+    const roiAudits = rawRois.map((fieldRoi) => ({
+      field: fieldRoi.field,
+      ...clampRoiWithAudit(fieldRoi.roi, width, height).audit
+    }));
+    const worstRoiMargin = roiAudits.reduce(
+      (acc, item) => ({
+        minX: Math.min(acc.minX, item.marginsBeforeClamp.minX),
+        minY: Math.min(acc.minY, item.marginsBeforeClamp.minY),
+        maxX: Math.max(acc.maxX, item.marginsBeforeClamp.maxX),
+        maxY: Math.max(acc.maxY, item.marginsBeforeClamp.maxY)
+      }),
+      {
+        minX: Number.POSITIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY
+      }
+    );
 
-    for (const fieldRoi of rois) {
+    for (const fieldRoi of rawRois) {
+      const clamped = clampRoiWithAudit(fieldRoi.roi, width, height);
       logger.log({
         ts: Date.now(),
         stage: "roi-mapper",
@@ -252,7 +228,11 @@ export class DynamicROIMapper {
         message: "Field ROI mapped.",
         data: {
           field: fieldRoi.field,
-          roi: fieldRoi.roi,
+          roi: clamped.roi,
+          roiRaw: fieldRoi.roi,
+          outOfBoundsBeforeClamp: clamped.audit.outOfBoundsBeforeClamp,
+          clampApplied: clamped.audit.clampApplied,
+          roiArea: clamped.audit.areaAfterClamp,
           pageType: anchors.pageType,
           usedFallbackGrid: anchors.usedFallbackGrid,
           anchorKeys
@@ -271,7 +251,11 @@ export class DynamicROIMapper {
         anchorCount: Object.keys(anchors.anchors).length,
         source: input.fileName,
         pageType: anchors.pageType,
+        layout: { width, height },
+        finalCanvas: { x: 0, y: 0, width, height },
         fallbackReasons,
+        worstRoiMargin,
+        roiAudits,
         rois
       }
     });
@@ -376,12 +360,17 @@ export class DynamicROIMapper {
             const ts = Date.now();
             const pagePath = join(debugRoiDir, `${ts}_${page}_page.png`);
             const overlayPath = join(debugRoiDir, `${ts}_${page}_overlay.png`);
-            await sharp(normalizedBuffer).png().toFile(pagePath);
-            const overlaySvg = buildRoiOverlaySvg(pageWidth, pageHeight, pageRois);
-            await sharp(normalizedBuffer)
-              .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
-              .png()
-              .toFile(overlayPath);
+            try {
+              await sharp(normalizedBuffer).png().toFile(pagePath);
+              const overlaySvg = buildRoiOverlaySvg(pageWidth, pageHeight, pageRois);
+              await sharp(normalizedBuffer)
+                .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
+                .png()
+                .toFile(overlayPath);
+            } catch {
+              // Best-effort debug rendering; skip in mocked/shimmed sharp environments.
+              return;
+            }
             logger.log({
               ts: Date.now(),
               stage: "roi-mapper",
@@ -429,10 +418,14 @@ function clampRoi(
   maxWidth: number,
   maxHeight: number
 ): FieldRoi["roi"] {
-  const x = clamp(Math.round(roi.x), 0, maxWidth - 1);
-  const y = clamp(Math.round(roi.y), 0, maxHeight - 1);
-  const maxRoiWidth = Math.max(1, maxWidth - x);
-  const maxRoiHeight = Math.max(1, maxHeight - y);
+  const minX = 0;
+  const minY = 0;
+  const maxX = maxWidth - 1;
+  const maxY = maxHeight - 1;
+  const x = clamp(Math.round(roi.x), minX, maxX);
+  const y = clamp(Math.round(roi.y), minY, maxY);
+  const maxRoiWidth = Math.max(1, maxX - x + 1);
+  const maxRoiHeight = Math.max(1, maxY - y + 1);
 
   return {
     x,
@@ -440,6 +433,34 @@ function clampRoi(
     width: clamp(Math.round(roi.width), 1, maxRoiWidth),
     height: clamp(Math.round(roi.height), 1, maxRoiHeight),
     page: roi.page
+  };
+}
+
+function clampRoiWithAudit(
+  roi: FieldRoi["roi"],
+  maxWidth: number,
+  maxHeight: number
+): { roi: FieldRoi["roi"]; audit: RoiClampAudit } {
+  const minX = Math.round(roi.x);
+  const minY = Math.round(roi.y);
+  const maxX = minX + Math.max(1, Math.round(roi.width));
+  const maxY = minY + Math.max(1, Math.round(roi.height));
+  const outOfBoundsBeforeClamp = minX < 0 || minY < 0 || maxX > maxWidth || maxY > maxHeight;
+  const clamped = clampRoi(roi, maxWidth, maxHeight);
+  const clampApplied =
+    clamped.x !== Math.round(roi.x) ||
+    clamped.y !== Math.round(roi.y) ||
+    clamped.width !== Math.max(1, Math.round(roi.width)) ||
+    clamped.height !== Math.max(1, Math.round(roi.height));
+  return {
+    roi: clamped,
+    audit: {
+      outOfBoundsBeforeClamp,
+      clampApplied,
+      areaBeforeClamp: Math.max(1, Math.round(roi.width)) * Math.max(1, Math.round(roi.height)),
+      areaAfterClamp: clamped.width * clamped.height,
+      marginsBeforeClamp: { minX, minY, maxX, maxY }
+    }
   };
 }
 
@@ -455,6 +476,10 @@ function clamp(value: number, min: number, max: number): number {
 
 function buildRoiOverlaySvg(width: number, height: number, rois: FieldRoi[]): string {
   const colors = ["#ff1744", "#00b0ff", "#00c853", "#ff9100", "#aa00ff", "#d500f9", "#00e5ff"];
+  const canvasRect = `<rect x="0" y="0" width="${Math.max(1, width - 1)}" height="${Math.max(
+    1,
+    height - 1
+  )}" fill="transparent" stroke="#fdd835" stroke-width="3" />`;
   const roiElements = rois
     .map((fieldRoi, index) => {
       const color = colors[index % colors.length];
@@ -470,7 +495,7 @@ function buildRoiOverlaySvg(width: number, height: number, rois: FieldRoi[]): st
     })
     .join("");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${roiElements}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${canvasRect}${roiElements}</svg>`;
 }
 
 function escapeSvgText(input: string): string {

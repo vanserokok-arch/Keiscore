@@ -3,3 +3,8 @@ node_modules
 _roi_debug
 *.log
 dist
+dist/
+_roi_debug/
+.tmp-debug-roi/
+_tmp_*.png
+.DS_Store
