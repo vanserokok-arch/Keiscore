@@ -776,11 +776,12 @@ async function preprocessRasterPage(
   const oriented = orientation.rotationDeg === 0 ? source : await rotateWithWhiteBg(source, orientation.rotationDeg);
   const deskew = await estimateDeskewAngle(oriented);
   const deskewed = Math.abs(deskew) < 0.05 ? oriented : await rotateFloatWithWhiteBg(oriented, -deskew);
-  const crop = await computeAdaptiveContentCrop(deskewed);
+  const adaptive = await computeAdaptiveContentCrop(deskewed);
+  const crop = adaptive.crop;
   const contentCropped =
     crop.bbox === null
-      ? deskewed
-      : await sharp(deskewed)
+      ? adaptive.processed
+      : await sharp(adaptive.processed)
           .extract({
             left: crop.bbox.x,
             top: crop.bbox.y,
@@ -822,6 +823,9 @@ async function preprocessRasterPage(
     orientationScore: orientation.score,
     deskewAngleDeg: Number(deskew.toFixed(2)),
     blackPixelRatio: Number(crop.blackPixelRatio.toFixed(4)),
+    thresholdStrategy: crop.thresholdStrategy,
+    retryCount: crop.retryCount,
+    finalBlackPixelRatio: Number(crop.blackPixelRatio.toFixed(4)),
     ...(crop.bbox === null
       ? {}
       : {
@@ -1088,21 +1092,69 @@ async function estimateDeskewAngle(source: Buffer): Promise<number> {
   return bestAngle;
 }
 
-async function computeAdaptiveContentCrop(
-  source: Buffer
-): Promise<{ bbox: Omit<RoiRect, "page"> | null; threshold: number; blackPixelRatio: number }> {
+async function computeAdaptiveContentCrop(source: Buffer): Promise<{
+  processed: Buffer;
+  crop: {
+    bbox: Omit<RoiRect, "page"> | null;
+    threshold: number;
+    blackPixelRatio: number;
+    thresholdStrategy: string;
+    retryCount: number;
+  };
+}> {
+  const enhancedBase = await applyMildUnsharp(await applyClaheLikeStretch(source, 1));
+  const firstPass = await evaluateAdaptiveCrop(enhancedBase, "otsu");
+  const decision = adaptiveThresholdRetryDecision(firstPass.blackPixelRatio);
+  if (decision.mode === "lower_threshold") {
+    const retryThreshold = clampInt(firstPass.threshold - 20, 110, 245);
+    const retryPass = await evaluateAdaptiveCrop(
+      enhancedBase,
+      `otsu_retry_lower_threshold_${retryThreshold}`,
+      retryThreshold
+    );
+    return { processed: enhancedBase, crop: { ...retryPass, retryCount: 1 } };
+  }
+  if (decision.mode === "contrast_boost") {
+    const contrastRetry = await applyMildUnsharp(await applyClaheLikeStretch(source, 1.25));
+    const retryPass = await evaluateAdaptiveCrop(contrastRetry, "otsu_retry_contrast_boost");
+    return { processed: contrastRetry, crop: { ...retryPass, retryCount: 1 } };
+  }
+  return { processed: enhancedBase, crop: { ...firstPass, retryCount: 0 } };
+}
+
+export function adaptiveThresholdRetryDecision(blackPixelRatio: number): {
+  mode: "none" | "lower_threshold" | "contrast_boost";
+} {
+  if (blackPixelRatio > 0.4) {
+    return { mode: "lower_threshold" };
+  }
+  if (blackPixelRatio < 0.02) {
+    return { mode: "contrast_boost" };
+  }
+  return { mode: "none" };
+}
+
+async function evaluateAdaptiveCrop(
+  source: Buffer,
+  thresholdStrategy: string,
+  thresholdOverride?: number
+): Promise<{
+  bbox: Omit<RoiRect, "page"> | null;
+  threshold: number;
+  blackPixelRatio: number;
+  thresholdStrategy: string;
+}> {
   const resized = await sharp(source).resize({ width: 1800, withoutEnlargement: true }).grayscale().raw().toBuffer({
     resolveWithObject: true
   });
   const { data, info } = resized;
-  const dark235 = countBelowThreshold(data, 235);
-  const dark245 = countBelowThreshold(data, 245);
   const all = Math.max(1, info.width * info.height);
-  const blackPixelRatio = dark235 / all;
-  const threshold = blackPixelRatio > 0.03 || dark245 / all > 0.09 ? 245 : 235;
+  const otsu = computeOtsuThreshold(data);
+  const threshold = thresholdOverride === undefined ? otsu : clampInt(thresholdOverride, 90, 245);
+  const blackPixelRatio = countBelowThreshold(data, threshold) / all;
   const bboxSmall = computeNonWhiteBboxFromRaw(data, info.width, info.height, threshold);
   if (bboxSmall === null) {
-    return { bbox: null, threshold, blackPixelRatio };
+    return { bbox: null, threshold, blackPixelRatio, thresholdStrategy };
   }
   const sourceMeta = await sharp(source).metadata();
   const fullW = Math.max(1, sourceMeta.width ?? info.width);
@@ -1118,9 +1170,73 @@ async function computeAdaptiveContentCrop(
   const height = Math.max(1, bottom - top);
   const areaRatio = (width * height) / (fullW * fullH);
   if (areaRatio > 0.995 || areaRatio < 0.08) {
-    return { bbox: null, threshold, blackPixelRatio };
+    return { bbox: null, threshold, blackPixelRatio, thresholdStrategy };
   }
-  return { bbox: { x: left, y: top, width, height }, threshold, blackPixelRatio };
+  return { bbox: { x: left, y: top, width, height }, threshold, blackPixelRatio, thresholdStrategy };
+}
+
+async function applyClaheLikeStretch(source: Buffer, boost: number): Promise<Buffer> {
+  const probe = await sharp(source).grayscale().raw().toBuffer({ resolveWithObject: true });
+  const low = percentileByte(probe.data, 0.03);
+  const high = percentileByte(probe.data, 0.97);
+  const span = Math.max(12, high - low);
+  const gain = clampNumber((255 / span) * boost, 0.9, 3.2);
+  const bias = -low * gain;
+  return sharp(source).grayscale().linear(gain, bias).png().toBuffer();
+}
+
+async function applyMildUnsharp(source: Buffer): Promise<Buffer> {
+  return sharp(source).grayscale().sharpen(1, 0.8, 1.1).png().toBuffer();
+}
+
+function computeOtsuThreshold(data: Buffer): number {
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0; i < data.length; i += 1) {
+    const v = data[i] ?? 0;
+    hist[v] = (hist[v] ?? 0) + 1;
+  }
+  const total = data.length;
+  if (total === 0) return 180;
+  let sum = 0;
+  for (let i = 0; i < 256; i += 1) sum += i * (hist[i] ?? 0);
+  let sumB = 0;
+  let wB = 0;
+  let maxVar = -1;
+  let threshold = 180;
+  for (let i = 0; i < 256; i += 1) {
+    wB += hist[i] ?? 0;
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += i * (hist[i] ?? 0);
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxVar) {
+      maxVar = between;
+      threshold = i;
+    }
+  }
+  return clampInt(threshold, 90, 245);
+}
+
+function percentileByte(data: Buffer, p: number): number {
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0; i < data.length; i += 1) {
+    const v = data[i] ?? 0;
+    hist[v] = (hist[v] ?? 0) + 1;
+  }
+  const target = Math.round(clampNumber(p, 0, 1) * Math.max(0, data.length - 1));
+  let cumulative = 0;
+  for (let i = 0; i < 256; i += 1) {
+    cumulative += hist[i] ?? 0;
+    if (cumulative > target) return i;
+  }
+  return 255;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function countBelowThreshold(data: Buffer, threshold: number): number {

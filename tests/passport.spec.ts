@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as coreModule from "../index.js";
 import {
   buildIssuedByCandidatesFromTsvWords,
+  rankCandidates,
+  selectFioFromThreeZones,
   selectBestFioFromCyrillicLines,
   type TsvWord
 } from "../extractors/rfInternalPassportExtractor.js";
+import { adaptiveThresholdRetryDecision } from "../format/formatNormalizer.js";
 import {
   ExtractionResultSchema,
   InMemoryAuditLogger,
@@ -232,6 +235,51 @@ describe("KEIScore foundation", () => {
     ];
     const candidates = buildIssuedByCandidatesFromTsvWords(words).map((item: { text: string }) => item.text);
     expect(candidates.some((item: string) => /\d{6,}/u.test(item))).toBe(false);
+  });
+
+  it("rankCandidates prefers regex-valid candidate even at lower confidence", () => {
+    const ranked = rankCandidates([
+      {
+        pass_id: "A",
+        source: "zonal_tsv",
+        psm: 6,
+        raw_text_preview: "412O 09336X",
+        normalized_preview: "412O 09336X",
+        confidence: 0.93,
+        regexMatch: 0,
+        lengthScore: 1,
+        russianCharRatio: 0,
+        anchorAlignmentScore: 1,
+        rankingScore: 0,
+        validated: null
+      },
+      {
+        pass_id: "B",
+        source: "zonal_tsv",
+        psm: 6,
+        raw_text_preview: "4120 093363",
+        normalized_preview: "4120 093363",
+        confidence: 0.61,
+        regexMatch: 1,
+        lengthScore: 1,
+        russianCharRatio: 0,
+        anchorAlignmentScore: 1,
+        rankingScore: 0,
+        validated: "4120 №093363"
+      }
+    ]);
+    expect(ranked[0]?.pass_id).toBe("B");
+  });
+
+  it("multi-pass FIO chooses valid 3-line candidate from horizontal zones", () => {
+    const candidate = selectFioFromThreeZones(["ВОЛОХОВИЧ", "АННА", "НИКОЛАЕВНА"]);
+    expect(candidate).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
+  });
+
+  it("adaptive threshold retry logic selects correct strategy by black pixel ratio", () => {
+    expect(adaptiveThresholdRetryDecision(0.7).mode).toBe("lower_threshold");
+    expect(adaptiveThresholdRetryDecision(0.01).mode).toBe("contrast_boost");
+    expect(adaptiveThresholdRetryDecision(0.2).mode).toBe("none");
   });
 
   it("extracts all fields on ideal scan", async () => {

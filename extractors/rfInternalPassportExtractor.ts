@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execa } from "execa";
 import sharp from "sharp";
+import { AnchorModel } from "../anchors/anchorModel.js";
+import { DynamicROIMapper } from "../anchors/dynamicRoiMapper.js";
+import { DocumentDetector } from "../detection/documentDetector.js";
+import { PerspectiveCalibrator } from "../detection/perspectiveCalibrator.js";
 import { FormatNormalizer } from "../format/formatNormalizer.js";
 import { normalizePassportNumber, normalizeRussianText } from "../format/textNormalizer.js";
 import {
@@ -437,6 +441,82 @@ function roiFromRatios(field: PassportField, w: number, h: number, page: number)
   return { x, y, width: rw, height: rh, page };
 }
 
+type RankedCandidate = {
+  pass_id: "A" | "B" | "C";
+  source: BestCandidateSource;
+  psm: number | null;
+  raw_text_preview: string;
+  normalized_preview: string;
+  confidence: number;
+  regexMatch: number;
+  lengthScore: number;
+  russianCharRatio: number;
+  anchorAlignmentScore: number;
+  rankingScore: number;
+  validated: string | null;
+};
+
+function regexForField(field: PassportField): RegExp | null {
+  if (field === "passport_number") return /\d{4}\s?\d{6}/u;
+  if (field === "dept_code") return /\d{3}-\d{3}/u;
+  return null;
+}
+
+function computeRussianCharRatio(text: string): number {
+  const compact = String(text ?? "").replace(/\s+/gu, "");
+  if (!compact) return 0;
+  const matches = compact.match(/[А-ЯЁ]/gu) ?? [];
+  return matches.length / compact.length;
+}
+
+function computeLengthScore(field: PassportField, text: string): number {
+  const len = String(text ?? "").trim().length;
+  if (len === 0) return 0;
+  if (field === "fio") return len >= 8 && len <= 90 ? 1 : 0;
+  if (field === "issued_by") return len > 15 ? 1 : 0;
+  if (field === "registration") return len > 10 ? 1 : 0;
+  if (field === "passport_number") return len >= 10 && len <= 13 ? 1 : 0;
+  if (field === "dept_code") return len >= 7 && len <= 8 ? 1 : 0;
+  return 0;
+}
+
+export function rankCandidates(candidates: RankedCandidate[]): RankedCandidate[] {
+  return [...candidates]
+    .map((candidate) => ({
+      ...candidate,
+      rankingScore:
+        clamp01(candidate.confidence) * 0.4 +
+        clamp01(candidate.regexMatch) * 0.3 +
+        clamp01(candidate.lengthScore) * 0.1 +
+        clamp01(candidate.russianCharRatio) * 0.1 +
+        clamp01(candidate.anchorAlignmentScore) * 0.1
+    }))
+    .sort(
+      (a, b) =>
+        b.rankingScore - a.rankingScore ||
+        Number(b.validated !== null) - Number(a.validated !== null) ||
+        b.confidence - a.confidence
+    );
+}
+
+function anchorScoreForField(field: PassportField, anchorKeys: Set<string>): number {
+  if (field === "fio") {
+    const hasAny =
+      anchorKeys.has("ФАМИЛИЯ") || anchorKeys.has("ИМЯ") || anchorKeys.has("ОТЧЕСТВО");
+    return hasAny ? 1 : 0.35;
+  }
+  if (field === "issued_by") {
+    return anchorKeys.has("ВЫДАН") ? 1 : 0.35;
+  }
+  if (field === "passport_number" || field === "dept_code") {
+    return anchorKeys.has("КОД ПОДРАЗДЕЛЕНИЯ") ? 1 : 0.35;
+  }
+  if (field === "registration") {
+    return anchorKeys.has("МЕСТО ЖИТЕЛЬСТВА") ? 1 : 0.35;
+  }
+  return 0.35;
+}
+
 async function cropToFile(srcPath: string, roi: RoiRect, outPath: string): Promise<void> {
   await sharp(srcPath)
     .extract({ left: roi.x, top: roi.y, width: roi.width, height: roi.height })
@@ -450,9 +530,24 @@ async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | 
   await img.normalize().median(1).threshold(thr).png({ compressionLevel: 9 }).toFile(outPath);
 }
 
-async function runTesseractTsv(imagePath: string, lang: string, timeoutMs: number, psm: number): Promise<string> {
+async function runTesseractTsv(
+  imagePath: string,
+  lang: string,
+  timeoutMs: number,
+  psm: number,
+  whitelist?: string
+): Promise<string> {
   const base = imagePath.replace(/\.png$/i, "");
-  const args = [imagePath, base, "-l", lang, "--psm", String(psm), "tsv"];
+  const args = [
+    imagePath,
+    base,
+    "-l",
+    lang,
+    "--psm",
+    String(psm),
+    ...(whitelist === undefined || whitelist === "" ? [] : ["-c", `tessedit_char_whitelist=${whitelist}`]),
+    "tsv"
+  ];
   await execa("tesseract", args, { timeout: timeoutMs, reject: false });
   try {
     return await readFile(`${base}.tsv`, "utf8");
@@ -715,7 +810,8 @@ async function ocrTsvLinesForRoi(
   lang: string,
   timeoutMs: number,
   mode: "text" | "digits",
-  psmList: number[]
+  psmList: number[],
+  whitelist?: string
 ): Promise<{
   lines: Array<{ text: string; avgConf: number }>;
   debug: { previews: string[]; emptyZones: Array<{ reason: string; crop_path: string | null }> };
@@ -735,7 +831,7 @@ async function ocrTsvLinesForRoi(
     const psmImg = `${psmBase}.png`;
     await sharp(prePath).toFile(psmImg);
 
-    const tsv = await runTesseractTsv(psmImg, lang, timeoutMs, psm);
+    const tsv = await runTesseractTsv(psmImg, lang, timeoutMs, psm, whitelist);
     const words = parseTsvWords(tsv);
     const lines = groupWordsIntoLines(words).map((l) => ({ text: l.text, avgConf: l.avgConf }));
 
@@ -790,9 +886,14 @@ function bestCandidateReport(
     confidence: number;
     source: BestCandidateSource;
     pass_id: "A" | "B" | "C";
+    selectedPass?: "A" | "B" | "C";
+    rankingScore?: number;
+    anchorAlignmentScore?: number;
+    thresholdStrategyUsed?: string;
     validator_passed: boolean;
     rejection_reason: string | null;
-  }
+  },
+  rankedTop?: RankedCandidate[]
 ): FieldReport {
   return {
     field,
@@ -800,11 +901,21 @@ function bestCandidateReport(
     engine_used: "tesseract",
     pass: best.validator_passed,
     pass_id: best.pass_id,
+    ...(best.selectedPass === undefined ? {} : { selectedPass: best.selectedPass }),
     confidence: best.validator_passed ? best.confidence : 0,
     validator_passed: best.validator_passed,
     rejection_reason: best.rejection_reason,
-    anchor_alignment_score: 0.45,
+    anchor_alignment_score: best.anchorAlignmentScore ?? 0.45,
+    ...(best.rankingScore === undefined ? {} : { rankingScore: best.rankingScore }),
+    ...(best.thresholdStrategyUsed === undefined ? {} : { thresholdStrategyUsed: best.thresholdStrategyUsed }),
     attempts,
+    multiPassAttempts: attempts.map((attempt) => ({
+      pass_id: attempt.pass_id,
+      psm: attempt.psm ?? 6,
+      source: (attempt.source ?? "roi") as BestCandidateSource,
+      confidence: Number(attempt.confidence ?? 0),
+      normalized_preview: String(attempt.normalized_preview ?? "").slice(0, 120)
+    })),
     best_candidate_preview: best.preview,
     best_candidate_source: best.source,
     best_candidate_normalized: best.normalized,
@@ -815,7 +926,18 @@ function bestCandidateReport(
         zonal_tsv: attempts.filter((a) => (a.source ?? "roi") === "zonal_tsv").length,
         page: attempts.filter((a) => (a.source ?? "roi") === "page").length
       },
-      top_candidates: [...attempts]
+      top_candidates: (rankedTop === undefined ? [] : rankedTop)
+        .map((candidate) => ({
+          raw_preview: String(candidate.raw_text_preview ?? "").slice(0, 120),
+          normalized_preview: String(candidate.normalized_preview ?? "").slice(0, 120),
+          confidence: Number(candidate.confidence ?? 0),
+          psm: candidate.psm,
+          source: candidate.source,
+          validator_passed: candidate.validated !== null,
+          rejection_reason: candidate.validated === null ? "FIELD_NOT_CONFIRMED" : null
+        }))
+        .concat(
+          [...attempts]
         .map((a) => ({
           validated: validateByField(field, a.normalized_preview ?? ""),
           raw_preview: String(a.raw_text_preview ?? "").slice(0, 120),
@@ -837,7 +959,117 @@ function bestCandidateReport(
         }))
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 3)
+        )
+        .slice(0, 3)
     }
+  };
+}
+
+function splitRoiIntoHorizontalZones(roi: RoiRect, zones: number): RoiRect[] {
+  const out: RoiRect[] = [];
+  const zoneHeight = Math.max(1, Math.floor(roi.height / Math.max(1, zones)));
+  for (let idx = 0; idx < zones; idx += 1) {
+    const y = roi.y + zoneHeight * idx;
+    const isLast = idx === zones - 1;
+    const height = isLast ? Math.max(1, roi.y + roi.height - y) : zoneHeight;
+    out.push({ x: roi.x, y, width: roi.width, height, page: roi.page });
+  }
+  return out;
+}
+
+function cleanCyrillicWords(text: string): string {
+  return normalizeRussianText(text)
+    .replace(/[^А-ЯЁ\s-]/gu, " ")
+    .replace(/\d/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+export function selectFioFromThreeZones(zoneLines: string[]): string | null {
+  if (zoneLines.length !== 3) return null;
+  const cleaned = zoneLines
+    .map((line) => cleanCyrillicWords(line))
+    .filter((line) => line.length >= 3 && line.length <= 30 && !/\d/u.test(line));
+  if (cleaned.length !== 3) return null;
+  const candidate = cleaned.join(" ").replace(/\s+/gu, " ").trim();
+  return validateFio(candidate) ?? null;
+}
+
+async function resolveRoisWithAnchorFirst(
+  normalized: Awaited<ReturnType<typeof FormatNormalizer.normalize>>,
+  logger: AuditLogger,
+  width: number,
+  height: number,
+  pageIndex: number
+): Promise<{ rois: Record<PassportField, RoiRect>; anchorKeys: Set<string> }> {
+  const fallback: Record<PassportField, RoiRect> = {
+    fio: roiFromRatios("fio", width, height, pageIndex),
+    passport_number: roiFromRatios("passport_number", width, height, pageIndex),
+    issued_by: roiFromRatios("issued_by", width, height, pageIndex),
+    dept_code: roiFromRatios("dept_code", width, height, pageIndex),
+    registration: roiFromRatios("registration", width, height, pageIndex)
+  };
+  try {
+    const detection = await DocumentDetector.detect(normalized, logger);
+    const calibration = await PerspectiveCalibrator.calibrate(normalized, detection, logger);
+    const anchors = await AnchorModel.findAnchors(normalized, detection, calibration, logger, false);
+    const mapped = await DynamicROIMapper.map(normalized, detection, calibration, anchors, logger, pageIndex);
+    const fromAnchors: Partial<Record<PassportField, RoiRect>> = {};
+    for (const item of mapped) {
+      fromAnchors[item.field] = item.roi;
+    }
+    const rois: Record<PassportField, RoiRect> = {
+      fio: fromAnchors.fio ?? fallback.fio,
+      passport_number: fromAnchors.passport_number ?? fallback.passport_number,
+      issued_by: fromAnchors.issued_by ?? fallback.issued_by,
+      dept_code: fromAnchors.dept_code ?? fallback.dept_code,
+      registration: fromAnchors.registration ?? fallback.registration
+    };
+    return { rois, anchorKeys: new Set(Object.keys(anchors.anchors)) };
+  } catch (error) {
+    logger.log({
+      ts: Date.now(),
+      stage: "extractor",
+      level: "warn",
+      message: "Anchor-first ROI mapping failed. Falling back to static ROI grid.",
+      data: { reason: error instanceof Error ? error.message : "unknown_error" }
+    });
+    return { rois: fallback, anchorKeys: new Set<string>() };
+  }
+}
+
+function makeRankedCandidate(params: {
+  field: PassportField;
+  pass_id: "A" | "B" | "C";
+  source: BestCandidateSource;
+  psm: number;
+  raw: string;
+  normalized: string;
+  confidence: number;
+  anchorAlignmentScore: number;
+  regex?: RegExp | null;
+}): RankedCandidate {
+  const validated = validateByField(params.field, params.normalized);
+  return {
+    pass_id: params.pass_id,
+    source: params.source,
+    psm: params.psm,
+    raw_text_preview: params.raw.slice(0, 120),
+    normalized_preview: params.normalized.slice(0, 120),
+    confidence: clamp01(params.confidence),
+    regexMatch:
+      params.regex === null || params.regex === undefined
+        ? validated !== null
+          ? 1
+          : 0
+        : params.regex.test(params.normalized)
+          ? 1
+          : 0,
+    lengthScore: computeLengthScore(params.field, params.normalized),
+    russianCharRatio: computeRussianCharRatio(params.normalized),
+    anchorAlignmentScore: clamp01(params.anchorAlignmentScore),
+    rankingScore: 0,
+    validated
   };
 }
 
@@ -905,13 +1137,8 @@ export class RfInternalPassportExtractor {
 
       tmp = await mkdtemp(join(tmpdir(), "keiscore-rfpass-"));
 
-      const rois: Record<PassportField, RoiRect> = {
-        fio: roiFromRatios("fio", width, height, pageIndex),
-        passport_number: roiFromRatios("passport_number", width, height, pageIndex),
-        issued_by: roiFromRatios("issued_by", width, height, pageIndex),
-        dept_code: roiFromRatios("dept_code", width, height, pageIndex),
-        registration: roiFromRatios("registration", width, height, pageIndex)
-      };
+      const { rois, anchorKeys } = await resolveRoisWithAnchorFirst(normalized, logger, width, height, pageIndex);
+      const thresholdStrategyUsed = normalized.preprocessing?.thresholdStrategy ?? "legacy";
 
       const debugDir = process.env.KEISCORE_DEBUG_ROI_DIR ? String(process.env.KEISCORE_DEBUG_ROI_DIR) : "";
       if (debugDir) {
@@ -946,6 +1173,8 @@ export class RfInternalPassportExtractor {
         const field: PassportField = "passport_number";
         const roi = rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
+        const ranked: RankedCandidate[] = [];
+        const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
 
         const linesRes = await ocrTsvLinesForRoi(
           pagePath,
@@ -954,36 +1183,57 @@ export class RfInternalPassportExtractor {
           options.tesseractLang ?? "rus",
           options.ocrTimeoutMs ?? 30_000,
           "digits",
-          [7, 6, 8, 11]
+          [6],
+          "0123456789№ "
         );
         const joined = linesRes.lines.map((l) => l.text).join(" ");
-        const normalizedText = normalizePassportNumber(joined);
-        const validated = validatePassportNumber(normalizedText);
+        const digits = normalizePassportNumber(joined);
+        const normalizedText = digits.length >= 10 ? `${digits.slice(0, 4)} ${digits.slice(4, 10)}` : digits;
 
         attempts.push({
-          pass_id: "C",
+          pass_id: "A",
           raw_text_preview: joined.slice(0, 120),
           normalized_preview: normalizedText.slice(0, 120),
           source: "zonal_tsv",
-          confidence: 0.9,
+          confidence: 0.82,
           psm: 6
         });
+        ranked.push(
+          makeRankedCandidate({
+            field,
+            pass_id: "A",
+            source: "zonal_tsv",
+            psm: 6,
+            raw: joined,
+            normalized: normalizedText,
+            confidence: 0.82,
+            anchorAlignmentScore,
+            regex: regexForField(field)
+          })
+        );
+        const rankedTop = rankCandidates(ranked);
+        const best = rankedTop[0];
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: normalizedText,
-            normalized: normalizedText,
-            confidence: validated !== null ? 0.9 : 0,
-            source: "zonal_tsv",
-            pass_id: "C",
-            validator_passed: validated !== null,
-            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
-          })
+            preview: best?.normalized_preview ?? normalizedText,
+            normalized: best?.validated ?? "",
+            confidence: best?.confidence ?? 0,
+            source: (best?.source ?? "zonal_tsv") as BestCandidateSource,
+            pass_id: best?.pass_id ?? "A",
+            selectedPass: best?.pass_id ?? "A",
+            rankingScore: best?.rankingScore ?? 0,
+            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
+            thresholdStrategyUsed,
+            validator_passed: (best?.validated ?? null) !== null,
+            rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
+          }, rankedTop.slice(0, 3))
         );
 
         fieldDebug[field] = {
           zonal_tsv_lines_preview: linesRes.debug.previews,
-          zonal_tsv_empty_zones: linesRes.debug.emptyZones
+          zonal_tsv_empty_zones: linesRes.debug.emptyZones,
+          thresholdStrategyUsed
         };
       }
 
@@ -992,6 +1242,8 @@ export class RfInternalPassportExtractor {
         const field: PassportField = "dept_code";
         const roi = rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
+        const ranked: RankedCandidate[] = [];
+        const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
 
         const linesRes = await ocrTsvLinesForRoi(
           pagePath,
@@ -1000,33 +1252,52 @@ export class RfInternalPassportExtractor {
           options.tesseractLang ?? "rus",
           options.ocrTimeoutMs ?? 30_000,
           "digits",
-          [7, 6, 8, 11]
+          [7],
+          "0123456789-"
         );
         const joined = linesRes.lines.map((l) => l.text).join(" ");
         const normalizedText = normalizeRussianText(joined)
           .replace(/[^0-9\-]/gu, "")
           .replace(/(\d{3})(\d{3})/u, "$1-$2");
-        const validated = validateDeptCode(normalizedText);
 
         attempts.push({
-          pass_id: "C",
+          pass_id: "A",
           raw_text_preview: joined.slice(0, 120),
           normalized_preview: normalizedText.slice(0, 120),
           source: "zonal_tsv",
-          confidence: 0.55,
-          psm: 6
+          confidence: 0.62,
+          psm: 7
         });
+        ranked.push(
+          makeRankedCandidate({
+            field,
+            pass_id: "A",
+            source: "zonal_tsv",
+            psm: 7,
+            raw: joined,
+            normalized: normalizedText,
+            confidence: 0.62,
+            anchorAlignmentScore,
+            regex: regexForField(field)
+          })
+        );
+        const rankedTop = rankCandidates(ranked);
+        const best = rankedTop[0];
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: normalizedText,
-            normalized: normalizedText,
-            confidence: validated !== null ? 0.55 : 0,
-            source: "zonal_tsv",
-            pass_id: "C",
-            validator_passed: validated !== null,
-            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
-          })
+            preview: best?.normalized_preview ?? normalizedText,
+            normalized: best?.validated ?? "",
+            confidence: best?.confidence ?? 0,
+            source: (best?.source ?? "zonal_tsv") as BestCandidateSource,
+            pass_id: best?.pass_id ?? "A",
+            selectedPass: best?.pass_id ?? "A",
+            rankingScore: best?.rankingScore ?? 0,
+            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
+            thresholdStrategyUsed,
+            validator_passed: (best?.validated ?? null) !== null,
+            rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
+          }, rankedTop.slice(0, 3))
         );
       }
 
@@ -1035,30 +1306,69 @@ export class RfInternalPassportExtractor {
         const field: PassportField = "fio";
         const roi = rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
-
-        const linesRes = await ocrTsvLinesForRoi(
-          pagePath,
-          roi,
-          tmp,
-          options.tesseractLang ?? "rus",
-          options.ocrTimeoutMs ?? 30_000,
-          "text",
-          [6, 4, 11, 7]
-        );
-        const fioCandidate = pickFioCandidate(linesRes.lines);
-
-        if (fioCandidate) {
-          attempts.push({
-            pass_id: "C",
-            raw_text_preview: fioCandidate.value.slice(0, 120),
-            normalized_preview: fioCandidate.value.slice(0, 120),
-            source: "zonal_tsv",
-            confidence: fioCandidate.conf,
-            psm: 6
-          });
-        } else {
-          const raw = await ocrPlainText(pagePath, roi, tmp, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 6);
-          const clean = cleanCyrillicLine(raw);
+        const ranked: RankedCandidate[] = [];
+        const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
+          { passId: "A", psm: 6 },
+          { passId: "B", psm: 11 }
+        ];
+        for (const config of passConfigs) {
+          const zoneRois = splitRoiIntoHorizontalZones(roi, 3);
+          const zoneTexts: string[] = [];
+          let zoneConfidence = 0;
+          for (const zoneRoi of zoneRois) {
+            const linesRes = await ocrTsvLinesForRoi(
+              pagePath,
+              zoneRoi,
+              tmp,
+              options.tesseractLang ?? "rus",
+              options.ocrTimeoutMs ?? 30_000,
+              "text",
+              [config.psm],
+              "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- "
+            );
+            const bestLine = linesRes.lines.sort((a, b) => b.avgConf - a.avgConf)[0];
+            const clean = cleanCyrillicWords(bestLine?.text ?? "");
+            if (clean.length >= 3 && clean.length <= 30 && !/\d/u.test(clean)) {
+              zoneTexts.push(clean);
+              zoneConfidence += Number(bestLine?.avgConf ?? 0);
+            }
+          }
+          const assembledFio = selectFioFromThreeZones(zoneTexts);
+          if (assembledFio !== null) {
+            const normalized = normalizeRussianText(assembledFio);
+            attempts.push({
+              pass_id: config.passId,
+              raw_text_preview: assembledFio.slice(0, 120),
+              normalized_preview: normalized.slice(0, 120),
+              source: "zonal_tsv",
+              confidence: zoneConfidence / 3,
+              psm: config.psm
+            });
+            ranked.push(
+              makeRankedCandidate({
+                field,
+                pass_id: config.passId,
+                source: "zonal_tsv",
+                psm: config.psm,
+                raw: assembledFio,
+                normalized,
+                confidence: zoneConfidence / 3,
+                anchorAlignmentScore
+              })
+            );
+          }
+        }
+        if (ranked.length === 0) {
+          const raw = await ocrPlainText(
+            pagePath,
+            roi,
+            tmp,
+            options.tesseractLang ?? "rus",
+            options.ocrTimeoutMs ?? 30_000,
+            6
+          );
+          const clean = cleanCyrillicWords(raw);
           attempts.push({
             pass_id: "C",
             raw_text_preview: raw.slice(0, 120),
@@ -1067,22 +1377,35 @@ export class RfInternalPassportExtractor {
             confidence: 0.15,
             psm: 6
           });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: "C",
+              source: "roi",
+              psm: 6,
+              raw,
+              normalized: clean,
+              confidence: 0.15,
+              anchorAlignmentScore
+            })
+          );
         }
-
-        const bestAttempt = attempts.find((a) => (a.normalized_preview ?? "").trim().length > 0) ?? attempts[0];
-        const normalizedText = normalizeRussianText(bestAttempt?.normalized_preview ?? "");
-        const validated = validateFio(normalizedText);
-
+        const rankedTop = rankCandidates(ranked);
+        const best = rankedTop[0];
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: normalizedText,
-            normalized: normalizedText,
-            confidence: validated !== null ? Number(bestAttempt?.confidence ?? 0) : 0,
-            source: (bestAttempt?.source ?? "roi") as BestCandidateSource,
-            pass_id: "C",
-            validator_passed: validated !== null,
-            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
-          })
+            preview: best?.normalized_preview ?? "",
+            normalized: best?.validated ?? "",
+            confidence: best?.confidence ?? 0,
+            source: (best?.source ?? "roi") as BestCandidateSource,
+            pass_id: best?.pass_id ?? "C",
+            selectedPass: best?.pass_id ?? "C",
+            rankingScore: best?.rankingScore ?? 0,
+            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
+            thresholdStrategyUsed,
+            validator_passed: (best?.validated ?? null) !== null,
+            rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
+          }, rankedTop.slice(0, 3))
         );
       }
 
@@ -1091,54 +1414,63 @@ export class RfInternalPassportExtractor {
         const field: PassportField = "issued_by";
         const roi = rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
-
-        const linesRes = await ocrTsvLinesForRoi(
-          pagePath,
-          roi,
-          tmp,
-          options.tesseractLang ?? "rus",
-          options.ocrTimeoutMs ?? 30_000,
-          "text",
-          [4, 6, 11, 7]
-        );
-        const issuedCandidate = pickIssuedByCandidate(linesRes.lines);
-
-        if (issuedCandidate) {
+        const ranked: RankedCandidate[] = [];
+        const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const passConfigs: Array<{ passId: "A" | "B"; psm: 4 | 6 }> = [
+          { passId: "A", psm: 4 },
+          { passId: "B", psm: 6 }
+        ];
+        for (const config of passConfigs) {
+          const linesRes = await ocrTsvLinesForRoi(
+            pagePath,
+            roi,
+            tmp,
+            options.tesseractLang ?? "rus",
+            options.ocrTimeoutMs ?? 30_000,
+            "text",
+            [config.psm]
+          );
+          const candidate = pickIssuedByCandidate(linesRes.lines);
+          const normalized = normalizeRussianText(candidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
+          if (normalized.length <= 15) continue;
           attempts.push({
-            pass_id: "C",
-            raw_text_preview: issuedCandidate.value.slice(0, 120),
-            normalized_preview: issuedCandidate.value.slice(0, 120),
+            pass_id: config.passId,
+            raw_text_preview: normalized.slice(0, 120),
+            normalized_preview: normalized.slice(0, 120),
             source: "zonal_tsv",
-            confidence: issuedCandidate.conf,
-            psm: 4
+            confidence: candidate?.conf ?? 0.2,
+            psm: config.psm
           });
-        } else {
-          const raw = await ocrPlainText(pagePath, roi, tmp, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 4);
-          const clean = cleanCyrillicLine(raw);
-          attempts.push({
-            pass_id: "C",
-            raw_text_preview: raw.slice(0, 120),
-            normalized_preview: clean.slice(0, 120),
-            source: "roi",
-            confidence: 0.12,
-            psm: 4
-          });
+          const markerHits = ISSUED_BY_MARKERS.reduce((acc, marker) => (normalized.includes(marker) ? acc + 1 : acc), 0);
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: config.passId,
+              source: "zonal_tsv",
+              psm: config.psm,
+              raw: normalized,
+              normalized,
+              confidence: clamp01((candidate?.conf ?? 0.2) + Math.min(0.2, markerHits * 0.05)),
+              anchorAlignmentScore
+            })
+          );
         }
-
-        const bestAttempt = attempts.find((a) => (a.normalized_preview ?? "").trim().length > 0) ?? attempts[0];
-        const normalizedText = normalizeRussianText(bestAttempt?.normalized_preview ?? "");
-        const validated = validateIssuedBy(normalizedText);
-
+        const rankedTop = rankCandidates(ranked);
+        const best = rankedTop[0];
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: normalizedText,
-            normalized: normalizedText,
-            confidence: validated !== null ? Number(bestAttempt?.confidence ?? 0) : 0,
-            source: (bestAttempt?.source ?? "roi") as BestCandidateSource,
-            pass_id: "C",
-            validator_passed: validated !== null,
-            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
-          })
+            preview: best?.normalized_preview ?? "",
+            normalized: best?.validated ?? "",
+            confidence: best?.confidence ?? 0,
+            source: (best?.source ?? "roi") as BestCandidateSource,
+            pass_id: best?.pass_id ?? "C",
+            selectedPass: best?.pass_id ?? "C",
+            rankingScore: best?.rankingScore ?? 0,
+            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
+            thresholdStrategyUsed,
+            validator_passed: (best?.validated ?? null) !== null,
+            rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
+          }, rankedTop.slice(0, 3))
         );
       }
 
@@ -1147,54 +1479,62 @@ export class RfInternalPassportExtractor {
         const field: PassportField = "registration";
         const roi = rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
-
-        const linesRes = await ocrTsvLinesForRoi(
-          pagePath,
-          roi,
-          tmp,
-          options.tesseractLang ?? "rus",
-          options.ocrTimeoutMs ?? 30_000,
-          "text",
-          [6, 4, 11, 7]
-        );
-        const regCandidate = pickRegistrationCandidate(linesRes.lines);
-
-        if (regCandidate) {
+        const ranked: RankedCandidate[] = [];
+        const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
+          { passId: "A", psm: 6 },
+          { passId: "B", psm: 11 }
+        ];
+        for (const config of passConfigs) {
+          const linesRes = await ocrTsvLinesForRoi(
+            pagePath,
+            roi,
+            tmp,
+            options.tesseractLang ?? "rus",
+            options.ocrTimeoutMs ?? 30_000,
+            "text",
+            [config.psm]
+          );
+          const regCandidate = pickRegistrationCandidate(linesRes.lines);
+          const normalized = normalizeRussianText(regCandidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
+          if (normalized.length <= 10) continue;
           attempts.push({
-            pass_id: "C",
-            raw_text_preview: regCandidate.value.slice(0, 120),
-            normalized_preview: regCandidate.value.slice(0, 120),
+            pass_id: config.passId,
+            raw_text_preview: normalized.slice(0, 120),
+            normalized_preview: normalized.slice(0, 120),
             source: "zonal_tsv",
-            confidence: regCandidate.conf,
-            psm: 6
+            confidence: regCandidate?.conf ?? 0.1,
+            psm: config.psm
           });
-        } else {
-          const raw = await ocrPlainText(pagePath, roi, tmp, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 6);
-          const clean = normalizeRussianText(raw).replace(/\s+/gu, " ").trim();
-          attempts.push({
-            pass_id: "C",
-            raw_text_preview: raw.slice(0, 120),
-            normalized_preview: clean.slice(0, 120),
-            source: "roi",
-            confidence: 0.08,
-            psm: 6
-          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: config.passId,
+              source: "zonal_tsv",
+              psm: config.psm,
+              raw: normalized,
+              normalized,
+              confidence: regCandidate?.conf ?? 0.1,
+              anchorAlignmentScore
+            })
+          );
         }
-
-        const bestAttempt = attempts.find((a) => (a.normalized_preview ?? "").trim().length > 0) ?? attempts[0];
-        const normalizedText = normalizeRussianText(bestAttempt?.normalized_preview ?? "");
-        const validated = validateRegistration(normalizedText);
-
+        const rankedTop = rankCandidates(ranked);
+        const best = rankedTop[0];
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: normalizedText,
-            normalized: normalizedText,
-            confidence: validated !== null ? Number(bestAttempt?.confidence ?? 0) : 0,
-            source: (bestAttempt?.source ?? "roi") as BestCandidateSource,
-            pass_id: "C",
-            validator_passed: validated !== null,
-            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
-          })
+            preview: best?.normalized_preview ?? "",
+            normalized: best?.validated ?? "",
+            confidence: best?.confidence ?? 0,
+            source: (best?.source ?? "roi") as BestCandidateSource,
+            pass_id: best?.pass_id ?? "C",
+            selectedPass: best?.pass_id ?? "C",
+            rankingScore: best?.rankingScore ?? 0,
+            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
+            thresholdStrategyUsed,
+            validator_passed: (best?.validated ?? null) !== null,
+            rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
+          }, rankedTop.slice(0, 3))
         );
       }
 

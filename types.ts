@@ -144,6 +144,16 @@ export interface FieldReport {
   best_candidate_preview?: string | undefined;
   best_candidate_source?: "roi" | "mrz" | "zonal_tsv" | "page" | undefined;
   best_candidate_normalized?: string | undefined;
+  multiPassAttempts?: Array<{
+    pass_id: "A" | "B" | "C";
+    psm: number;
+    source: "roi" | "mrz" | "zonal_tsv" | "page";
+    confidence: number;
+    normalized_preview: string;
+  }> | undefined;
+  selectedPass?: "A" | "B" | "C" | undefined;
+  rankingScore?: number | undefined;
+  thresholdStrategyUsed?: string | undefined;
   debug_candidates?: {
     source_counts: Record<"roi" | "mrz" | "zonal_tsv" | "page", number>;
     top_candidates: Array<{
@@ -219,6 +229,9 @@ export interface NormalizedInput {
     orientationScore: number;
     deskewAngleDeg: number;
     blackPixelRatio: number;
+    thresholdStrategy?: string;
+    retryCount?: number;
+    finalBlackPixelRatio?: number;
   };
   mockLayout?: MockDocumentLayout;
 }
