@@ -825,6 +825,8 @@ async function preprocessRasterPage(
     blackPixelRatio: Number(crop.blackPixelRatio.toFixed(4)),
     thresholdStrategy: crop.thresholdStrategy,
     retryCount: crop.retryCount,
+    usedInvert: crop.usedInvert,
+    finalThreshold: crop.threshold,
     finalBlackPixelRatio: Number(crop.blackPixelRatio.toFixed(4)),
     ...(crop.bbox === null
       ? {}
@@ -1100,38 +1102,109 @@ async function computeAdaptiveContentCrop(source: Buffer): Promise<{
     blackPixelRatio: number;
     thresholdStrategy: string;
     retryCount: number;
+    usedInvert: boolean;
   };
 }> {
   const enhancedBase = await applyMildUnsharp(await applyClaheLikeStretch(source, 1));
-  const firstPass = await evaluateAdaptiveCrop(enhancedBase, "otsu");
-  const decision = adaptiveThresholdRetryDecision(firstPass.blackPixelRatio);
-  if (decision.mode === "lower_threshold") {
-    const retryThreshold = clampInt(firstPass.threshold - 20, 110, 245);
-    const retryPass = await evaluateAdaptiveCrop(
-      enhancedBase,
-      `otsu_retry_lower_threshold_${retryThreshold}`,
-      retryThreshold
-    );
-    return { processed: enhancedBase, crop: { ...retryPass, retryCount: 1 } };
+  let processed = enhancedBase;
+  let retryCount = 0;
+  let usedInvert = false;
+
+  let best = await evaluateAdaptiveCrop(processed, "otsu");
+
+  // Retry path for under-inked scans.
+  if (adaptiveThresholdRetryDecision(best.blackPixelRatio).mode === "contrast_boost") {
+    processed = await applyMildUnsharp(await applyClaheLikeStretch(source, 1.35));
+    best = await evaluateAdaptiveCrop(processed, "otsu_retry_contrast_boost");
+    retryCount += 1;
   }
-  if (decision.mode === "contrast_boost") {
-    const contrastRetry = await applyMildUnsharp(await applyClaheLikeStretch(source, 1.25));
-    const retryPass = await evaluateAdaptiveCrop(contrastRetry, "otsu_retry_contrast_boost");
-    return { processed: contrastRetry, crop: { ...retryPass, retryCount: 1 } };
+
+  // Retry path for over-inked scans: progressively lower threshold.
+  if (adaptiveThresholdRetryDecision(best.blackPixelRatio).mode === "lower_threshold") {
+    best = await lowerThresholdUntilTarget(processed, best, 6);
+    retryCount += best.thresholdStrategy.includes("iter_") ? extractRetryCount(best.thresholdStrategy) : 0;
   }
-  return { processed: enhancedBase, crop: { ...firstPass, retryCount: 0 } };
+
+  // Safety branch for inverse/dark scans: evaluate negate, keep it only when ratio is closer to target.
+  if (best.blackPixelRatio > 0.6) {
+    const inverted = await sharp(processed).grayscale().negate().png().toBuffer();
+    let invertedBest = await evaluateAdaptiveCrop(inverted, "otsu_invert");
+    retryCount += 1;
+    if (adaptiveThresholdRetryDecision(invertedBest.blackPixelRatio).mode === "lower_threshold") {
+      invertedBest = await lowerThresholdUntilTarget(inverted, invertedBest, 6, "invert");
+      retryCount += invertedBest.thresholdStrategy.includes("iter_")
+        ? extractRetryCount(invertedBest.thresholdStrategy)
+        : 0;
+    }
+    if (distanceToTargetRatio(invertedBest.blackPixelRatio) < distanceToTargetRatio(best.blackPixelRatio)) {
+      best = invertedBest;
+      usedInvert = true;
+    }
+  }
+
+  return { processed, crop: { ...best, retryCount, usedInvert } };
 }
 
 export function adaptiveThresholdRetryDecision(blackPixelRatio: number): {
   mode: "none" | "lower_threshold" | "contrast_boost";
 } {
-  if (blackPixelRatio > 0.4) {
+  if (blackPixelRatio > 0.35) {
     return { mode: "lower_threshold" };
   }
-  if (blackPixelRatio < 0.02) {
+  if (blackPixelRatio < 0.01) {
     return { mode: "contrast_boost" };
   }
   return { mode: "none" };
+}
+
+function isTargetBlackPixelRatio(blackPixelRatio: number): boolean {
+  return blackPixelRatio >= 0.03 && blackPixelRatio <= 0.25;
+}
+
+function distanceToTargetRatio(blackPixelRatio: number): number {
+  if (isTargetBlackPixelRatio(blackPixelRatio)) return 0;
+  if (blackPixelRatio < 0.03) return 0.03 - blackPixelRatio;
+  return blackPixelRatio - 0.25;
+}
+
+function extractRetryCount(strategy: string): number {
+  const match = strategy.match(/iter_(\d+)/u);
+  if (!match) return 0;
+  const parsed = Number.parseInt(match[1] ?? "0", 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+async function lowerThresholdUntilTarget(
+  source: Buffer,
+  seed: {
+    bbox: Omit<RoiRect, "page"> | null;
+    threshold: number;
+    blackPixelRatio: number;
+    thresholdStrategy: string;
+  },
+  maxIterations: number,
+  label = "lower_threshold"
+): Promise<{
+  bbox: Omit<RoiRect, "page"> | null;
+  threshold: number;
+  blackPixelRatio: number;
+  thresholdStrategy: string;
+}> {
+  let best = seed;
+  let threshold = seed.threshold;
+  let iteration = 0;
+  while (iteration < maxIterations && threshold > 120 && !isTargetBlackPixelRatio(best.blackPixelRatio)) {
+    if (best.blackPixelRatio <= 0.25) break;
+    threshold = clampInt(threshold - 15, 120, 245);
+    const pass = await evaluateAdaptiveCrop(
+      source,
+      `${label}_iter_${iteration + 1}_t${threshold}`,
+      threshold
+    );
+    best = pass;
+    iteration += 1;
+  }
+  return best;
 }
 
 async function evaluateAdaptiveCrop(

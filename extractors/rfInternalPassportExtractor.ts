@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execa } from "execa";
@@ -25,6 +25,7 @@ import {
   type ExtractionResult,
   type FieldReport,
   type InputFile,
+  type AnchorBox,
   type PassportField,
   type RoiRect,
   type MockDocumentLayout
@@ -441,7 +442,145 @@ function roiFromRatios(field: PassportField, w: number, h: number, page: number)
   return { x, y, width: rw, height: rh, page };
 }
 
+function expandRoi(
+  roi: RoiRect,
+  pageWidth: number,
+  pageHeight: number,
+  expand: { left: number; right: number; top: number; bottom: number }
+): RoiRect {
+  const leftPad = Math.round(roi.width * Math.max(0, expand.left));
+  const rightPad = Math.round(roi.width * Math.max(0, expand.right));
+  const topPad = Math.round(roi.height * Math.max(0, expand.top));
+  const bottomPad = Math.round(roi.height * Math.max(0, expand.bottom));
+  const x0 = clamp(roi.x - leftPad, 0, Math.max(0, pageWidth - 1));
+  const y0 = clamp(roi.y - topPad, 0, Math.max(0, pageHeight - 1));
+  const x1 = clamp(roi.x + roi.width + rightPad, x0 + 1, Math.max(1, pageWidth));
+  const y1 = clamp(roi.y + roi.height + bottomPad, y0 + 1, Math.max(1, pageHeight));
+  return {
+    x: x0,
+    y: y0,
+    width: Math.max(1, x1 - x0),
+    height: Math.max(1, y1 - y0),
+    page: roi.page
+  };
+}
+
+function buildDeptCodeRoiFromAnchorBox(anchorBox: AnchorBox, pageWidth: number, pageHeight: number, page: number): RoiRect {
+  const x = clamp(Math.round(anchorBox.x), 0, Math.max(0, pageWidth - 1));
+  const y = clamp(Math.round(anchorBox.y + anchorBox.height + 10), 0, Math.max(0, pageHeight - 1));
+  const width = Math.max(1, Math.round(anchorBox.width * 1.6));
+  const height = Math.max(1, Math.round(anchorBox.height * 1.2));
+  const x2 = clamp(x + width, x + 1, Math.max(1, pageWidth));
+  const y2 = clamp(y + height, y + 1, Math.max(1, pageHeight));
+  return { x, y, width: Math.max(1, x2 - x), height: Math.max(1, y2 - y), page };
+}
+
+function shiftRoiVertical(roi: RoiRect, offsetY: number, pageHeight: number): RoiRect {
+  const y = clamp(roi.y + offsetY, 0, Math.max(0, pageHeight - 1));
+  const y2 = clamp(y + roi.height, y + 1, Math.max(1, pageHeight));
+  return { ...roi, y, height: Math.max(1, y2 - y) };
+}
+
+function normalizeDeptCodeStrict(raw: string): string {
+  const normalized = normalizeRussianText(raw).replace(/[^0-9\-]/gu, "");
+  if (normalized.length !== 7) return "";
+  if (!normalized.includes("-")) return "";
+  if (!/^\d{3}-\d{3}$/u.test(normalized)) return "";
+  return normalized;
+}
+
+function clampIntValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function makeRoi(pageWidth: number, pageHeight: number, page: number, x: number, y: number, width: number, height: number): RoiRect {
+  const left = clampIntValue(x, 0, Math.max(0, pageWidth - 1));
+  const top = clampIntValue(y, 0, Math.max(0, pageHeight - 1));
+  const right = clampIntValue(left + width, left + 1, Math.max(1, pageWidth));
+  const bottom = clampIntValue(top + height, top + 1, Math.max(1, pageHeight));
+  return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top), page };
+}
+
+function buildDeptCodeRoiCandidates(anchorBbox: AnchorBox, pageWidth: number, pageHeight: number, page: number): RoiRect[] {
+  const candidates: RoiRect[] = [];
+  const anchorRight = anchorBbox.x + anchorBbox.width;
+  const anchorBottom = anchorBbox.y + anchorBbox.height;
+  const rightWidth = clampIntValue(anchorBbox.width * 0.9, 260, 520);
+  const rightHeight = clampIntValue(anchorBbox.height * 1.1, 34, 70);
+  const belowWidth = clampIntValue(anchorBbox.width * 1.6, 300, 700);
+  const belowHeight = clampIntValue(anchorBbox.height * 1.2, 34, 80);
+  const dxRight = [8, 24, 40, 64, 96, 128];
+  const dyRight = [-18, -8, 0, 8, 18];
+  const dxBelow = [-30, 0, 30];
+  const dyBelow = [6, 14, 22, 30];
+
+  for (const dx of dxRight) {
+    for (const dy of dyRight) {
+      candidates.push(makeRoi(pageWidth, pageHeight, page, anchorRight + dx, anchorBbox.y + dy, rightWidth, rightHeight));
+    }
+  }
+  for (const dx of dxBelow) {
+    for (const dy of dyBelow) {
+      candidates.push(makeRoi(pageWidth, pageHeight, page, anchorBbox.x + dx, anchorBottom + dy, belowWidth, belowHeight));
+    }
+  }
+
+  const dedup = new Map<string, RoiRect>();
+  for (const candidate of candidates) {
+    const key = `${candidate.x}:${candidate.y}:${candidate.width}:${candidate.height}`;
+    if (!dedup.has(key)) dedup.set(key, candidate);
+  }
+  return [...dedup.values()];
+}
+
+function computeOtsuThresholdRaw(data: Buffer): number {
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0; i < data.length; i += 1) {
+    hist[data[i] ?? 0] = (hist[data[i] ?? 0] ?? 0) + 1;
+  }
+  const total = data.length;
+  if (total === 0) return 200;
+  let sum = 0;
+  for (let i = 0; i < 256; i += 1) sum += i * (hist[i] ?? 0);
+  let sumB = 0;
+  let wB = 0;
+  let maxVar = -1;
+  let threshold = 200;
+  for (let i = 0; i < 256; i += 1) {
+    wB += hist[i] ?? 0;
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += i * (hist[i] ?? 0);
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxVar) {
+      maxVar = between;
+      threshold = i;
+    }
+  }
+  return clampIntValue(threshold, 90, 245);
+}
+
+async function computeInkScore(pagePath: string, roi: RoiRect): Promise<number> {
+  const { data } = await sharp(pagePath)
+    .extract({ left: roi.x, top: roi.y, width: roi.width, height: roi.height })
+    .grayscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (data.length === 0) return 0;
+  const otsu = computeOtsuThresholdRaw(data);
+  const threshold = Math.max(otsu, 200);
+  let black = 0;
+  for (let i = 0; i < data.length; i += 1) {
+    if ((data[i] ?? 255) < threshold) black += 1;
+  }
+  return black / data.length;
+}
+
 type RankedCandidate = {
+  field?: PassportField;
   pass_id: "A" | "B" | "C";
   source: BestCandidateSource;
   psm: number | null;
@@ -485,11 +624,15 @@ export function rankCandidates(candidates: RankedCandidate[]): RankedCandidate[]
     .map((candidate) => ({
       ...candidate,
       rankingScore:
-        clamp01(candidate.confidence) * 0.4 +
-        clamp01(candidate.regexMatch) * 0.3 +
-        clamp01(candidate.lengthScore) * 0.1 +
-        clamp01(candidate.russianCharRatio) * 0.1 +
-        clamp01(candidate.anchorAlignmentScore) * 0.1
+        candidate.field === "dept_code"
+          ? clamp01(candidate.confidence) * 0.5 +
+            clamp01(candidate.regexMatch) * 0.4 +
+            clamp01(candidate.lengthScore) * 0.1
+          : clamp01(candidate.confidence) * 0.4 +
+            clamp01(candidate.regexMatch) * 0.3 +
+            clamp01(candidate.lengthScore) * 0.1 +
+            clamp01(candidate.russianCharRatio) * 0.1 +
+            clamp01(candidate.anchorAlignmentScore) * 0.1
     }))
     .sort(
       (a, b) =>
@@ -500,21 +643,23 @@ export function rankCandidates(candidates: RankedCandidate[]): RankedCandidate[]
 }
 
 function anchorScoreForField(field: PassportField, anchorKeys: Set<string>): number {
+  if (anchorKeys.size === 0) {
+    return 0.1;
+  }
   if (field === "fio") {
-    const hasAny =
-      anchorKeys.has("ФАМИЛИЯ") || anchorKeys.has("ИМЯ") || anchorKeys.has("ОТЧЕСТВО");
-    return hasAny ? 1 : 0.35;
+    const hasAny = anchorKeys.has("ФАМИЛИЯ") || anchorKeys.has("ИМЯ") || anchorKeys.has("ОТЧЕСТВО");
+    return hasAny ? 0.92 : 0.2;
   }
   if (field === "issued_by") {
-    return anchorKeys.has("ВЫДАН") ? 1 : 0.35;
+    return anchorKeys.has("ВЫДАН") ? 0.92 : 0.2;
   }
   if (field === "passport_number" || field === "dept_code") {
-    return anchorKeys.has("КОД ПОДРАЗДЕЛЕНИЯ") ? 1 : 0.35;
+    return anchorKeys.has("КОД ПОДРАЗДЕЛЕНИЯ") ? 0.92 : 0.2;
   }
   if (field === "registration") {
-    return anchorKeys.has("МЕСТО ЖИТЕЛЬСТВА") ? 1 : 0.35;
+    return anchorKeys.has("МЕСТО ЖИТЕЛЬСТВА") ? 0.92 : 0.2;
   }
-  return 0.35;
+  return 0.2;
 }
 
 async function cropToFile(srcPath: string, roi: RoiRect, outPath: string): Promise<void> {
@@ -528,6 +673,61 @@ async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | 
   const img = sharp(inPath).grayscale();
   const thr = mode === "digits" ? 205 : 220;
   await img.normalize().median(1).threshold(thr).png({ compressionLevel: 9 }).toFile(outPath);
+}
+
+async function saveRoiPassDebugArtifacts(params: {
+  pagePath: string;
+  roi: RoiRect;
+  field: PassportField;
+  passId: string;
+  mode: "text" | "digits";
+  stage: "tsv" | "plain";
+  cropPath: string;
+  prePath: string;
+  psmList: number[];
+}): Promise<void> {
+  const debugDirRaw = process.env.KEISCORE_DEBUG_ROI_DIR;
+  const debugDir = debugDirRaw === undefined ? "" : String(debugDirRaw).trim();
+  if (debugDir === "") return;
+  await mkdir(debugDir, { recursive: true });
+  const ts = Date.now();
+  const stem = `${ts}_field-${params.field}_pass-${params.passId}_stage-${params.stage}_mode-${params.mode}_x${params.roi.x}_y${params.roi.y}_w${params.roi.width}_h${params.roi.height}`;
+  const beforePath = join(debugDir, `${stem}_before.png`);
+  const afterPath = join(debugDir, `${stem}_after.png`);
+  const overlayPath = join(debugDir, `${stem}_overlay.png`);
+  const metaPath = join(debugDir, `${stem}.json`);
+  await sharp(params.cropPath).png().toFile(beforePath);
+  await sharp(params.prePath).png().toFile(afterPath);
+  const roiOverlay = Buffer.from(
+    `<svg width="${params.roi.width}" height="${params.roi.height}"><rect x="1" y="1" width="${Math.max(
+      1,
+      params.roi.width - 2
+    )}" height="${Math.max(1, params.roi.height - 2)}" fill="none" stroke="#22c55e" stroke-width="2"/></svg>`
+  );
+  await sharp(params.pagePath)
+    .extract({ left: params.roi.x, top: params.roi.y, width: params.roi.width, height: params.roi.height })
+    .composite([{ input: roiOverlay, top: 0, left: 0 }])
+    .png()
+    .toFile(overlayPath);
+  await writeFile(
+    metaPath,
+    JSON.stringify(
+      {
+        field: params.field,
+        passId: params.passId,
+        stage: params.stage,
+        mode: params.mode,
+        roi: params.roi,
+        psmList: params.psmList,
+        before: beforePath,
+        after: afterPath,
+        overlay: overlayPath
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
 }
 
 async function runTesseractTsv(
@@ -811,7 +1011,8 @@ async function ocrTsvLinesForRoi(
   timeoutMs: number,
   mode: "text" | "digits",
   psmList: number[],
-  whitelist?: string
+  whitelist?: string,
+  debugContext?: { field: PassportField; passId: string }
 ): Promise<{
   lines: Array<{ text: string; avgConf: number }>;
   debug: { previews: string[]; emptyZones: Array<{ reason: string; crop_path: string | null }> };
@@ -821,6 +1022,19 @@ async function ocrTsvLinesForRoi(
 
   await cropToFile(pagePath, roi, cropPath);
   await preprocessForOcr(cropPath, prePath, mode);
+  if (debugContext !== undefined) {
+    await saveRoiPassDebugArtifacts({
+      pagePath,
+      roi,
+      field: debugContext.field,
+      passId: debugContext.passId,
+      mode,
+      stage: "tsv",
+      cropPath,
+      prePath,
+      psmList
+    });
+  }
 
   const emptyZones: Array<{ reason: string; crop_path: string | null }> = [];
   let bestLines: Array<{ text: string; avgConf: number }> = [];
@@ -853,11 +1067,32 @@ async function ocrTsvLinesForRoi(
   return { lines: bestLines, debug: { previews: bestPreview, emptyZones } };
 }
 
-async function ocrPlainText(pagePath: string, roi: RoiRect, tmp: string, lang: string, timeoutMs: number, psm: number) {
+async function ocrPlainText(
+  pagePath: string,
+  roi: RoiRect,
+  tmp: string,
+  lang: string,
+  timeoutMs: number,
+  psm: number,
+  debugContext?: { field: PassportField; passId: string }
+) {
   const cropPath = join(tmp, `plain-${roi.x}-${roi.y}-${roi.width}-${roi.height}.png`);
   const prePath = join(tmp, `plain-${roi.x}-${roi.y}-${roi.width}-${roi.height}.pre.png`);
   await cropToFile(pagePath, roi, cropPath);
   await preprocessForOcr(cropPath, prePath, "text");
+  if (debugContext !== undefined) {
+    await saveRoiPassDebugArtifacts({
+      pagePath,
+      roi,
+      field: debugContext.field,
+      passId: debugContext.passId,
+      mode: "text",
+      stage: "plain",
+      cropPath,
+      prePath,
+      psmList: [psm]
+    });
+  }
 
   const outBase = join(tmp, `plain-${roi.x}-${roi.y}-${roi.width}-${roi.height}-out`);
   await execa("tesseract", [prePath, outBase, "-l", lang, "--psm", String(psm)], { timeout: timeoutMs, reject: false });
@@ -867,6 +1102,46 @@ async function ocrPlainText(pagePath: string, roi: RoiRect, tmp: string, lang: s
   } catch {
     return "";
   }
+}
+
+async function ocrDeptCodeStrictLinesForRoi(
+  pagePath: string,
+  roi: RoiRect,
+  tmp: string,
+  lang: string,
+  timeoutMs: number,
+  debugContext: { field: PassportField; passId: string }
+): Promise<Array<{ text: string; avgConf: number }>> {
+  const cropPath = join(tmp, `dept-${debugContext.passId}-${roi.x}-${roi.y}-${roi.width}-${roi.height}.png`);
+  const prePath = join(tmp, `dept-${debugContext.passId}-${roi.x}-${roi.y}-${roi.width}-${roi.height}.pre.png`);
+  await cropToFile(pagePath, roi, cropPath);
+  await sharp(cropPath)
+    .grayscale()
+    .resize({
+      width: Math.max(1200, roi.width * 4),
+      withoutEnlargement: false,
+      fit: "contain",
+      background: { r: 255, g: 255, b: 255 }
+    })
+    .normalize()
+    .median(1)
+    .sharpen(0.6, 0.6, 0.9)
+    .png({ compressionLevel: 9 })
+    .toFile(prePath);
+  await saveRoiPassDebugArtifacts({
+    pagePath,
+    roi,
+    field: debugContext.field,
+    passId: debugContext.passId,
+    mode: "digits",
+    stage: "tsv",
+    cropPath,
+    prePath,
+    psmList: [7]
+  });
+  const tsv = await runTesseractTsv(prePath, lang, timeoutMs, 7, "0123456789-");
+  const words = parseTsvWords(tsv);
+  return groupWordsIntoLines(words).map((line) => ({ text: line.text, avgConf: line.avgConf }));
 }
 
 function bestCandidateReport(
@@ -905,7 +1180,7 @@ function bestCandidateReport(
     confidence: best.validator_passed ? best.confidence : 0,
     validator_passed: best.validator_passed,
     rejection_reason: best.rejection_reason,
-    anchor_alignment_score: best.anchorAlignmentScore ?? 0.45,
+    anchor_alignment_score: clamp01(best.anchorAlignmentScore ?? 0.1),
     ...(best.rankingScore === undefined ? {} : { rankingScore: best.rankingScore }),
     ...(best.thresholdStrategyUsed === undefined ? {} : { thresholdStrategyUsed: best.thresholdStrategyUsed }),
     attempts,
@@ -1001,7 +1276,14 @@ async function resolveRoisWithAnchorFirst(
   width: number,
   height: number,
   pageIndex: number
-): Promise<{ rois: Record<PassportField, RoiRect>; anchorKeys: Set<string> }> {
+): Promise<{
+  rois: Record<PassportField, RoiRect>;
+  anchorKeys: Set<string>;
+  anchorsFoundCount: number;
+  anchorKeysTop: string[];
+  fallbackUsed: boolean;
+  deptCodeAnchorBox?: AnchorBox;
+}> {
   const fallback: Record<PassportField, RoiRect> = {
     fio: roiFromRatios("fio", width, height, pageIndex),
     passport_number: roiFromRatios("passport_number", width, height, pageIndex),
@@ -1013,10 +1295,62 @@ async function resolveRoisWithAnchorFirst(
     const detection = await DocumentDetector.detect(normalized, logger);
     const calibration = await PerspectiveCalibrator.calibrate(normalized, detection, logger);
     const anchors = await AnchorModel.findAnchors(normalized, detection, calibration, logger, false);
+    const anchorKeysAll = Object.keys(anchors.anchors);
+    const deptCodeAnchorKey = Object.keys(anchors.anchorBoxes ?? {}).find((key) => key.includes("КОД"));
+    const deptCodeAnchorBox = deptCodeAnchorKey ? anchors.anchorBoxes?.[deptCodeAnchorKey] : undefined;
+    const anchorsFoundCount = anchorKeysAll.length;
+    const anchorKeysTop = anchorKeysAll.slice(0, 10);
+    logger.log({
+      ts: Date.now(),
+      stage: "extractor",
+      level: "info",
+      message: "Anchor model scan completed.",
+      data: {
+        anchorsFoundCount,
+        anchorKeys: anchorKeysTop,
+        fallbackStatic: Boolean(anchors.usedFallbackGrid)
+      }
+    });
     const mapped = await DynamicROIMapper.map(normalized, detection, calibration, anchors, logger, pageIndex);
     const fromAnchors: Partial<Record<PassportField, RoiRect>> = {};
     for (const item of mapped) {
       fromAnchors[item.field] = item.roi;
+    }
+    const fallbackUsed =
+      anchors.usedFallbackGrid ||
+      FIELD_ORDER.some((field) => fromAnchors[field] === undefined) ||
+      anchorsFoundCount === 0;
+    logger.log({
+      ts: Date.now(),
+      stage: "extractor",
+      level: "info",
+      message: "Anchor-first ROI audit.",
+      data: {
+        anchorsFoundCount,
+        anchorKeys: anchorKeysTop,
+        fallbackUsed,
+        deptCodeAnchorKey: deptCodeAnchorKey ?? null
+      }
+    });
+    if (anchorsFoundCount === 0) {
+      logger.log({
+        ts: Date.now(),
+        stage: "extractor",
+        level: "debug",
+        message: "Anchor-first ROI fallback to static.",
+        data: {
+          reason: "no_anchors_found",
+          fallbackUsed: true
+        }
+      });
+      return {
+        rois: fallback,
+        anchorKeys: new Set<string>(),
+        anchorsFoundCount,
+        anchorKeysTop,
+        fallbackUsed: true,
+        ...(deptCodeAnchorBox === undefined ? {} : { deptCodeAnchorBox })
+      };
     }
     const rois: Record<PassportField, RoiRect> = {
       fio: fromAnchors.fio ?? fallback.fio,
@@ -1025,7 +1359,14 @@ async function resolveRoisWithAnchorFirst(
       dept_code: fromAnchors.dept_code ?? fallback.dept_code,
       registration: fromAnchors.registration ?? fallback.registration
     };
-    return { rois, anchorKeys: new Set(Object.keys(anchors.anchors)) };
+    return {
+      rois,
+      anchorKeys: new Set(anchorKeysAll),
+      anchorsFoundCount,
+      anchorKeysTop,
+      fallbackUsed,
+      ...(deptCodeAnchorBox === undefined ? {} : { deptCodeAnchorBox })
+    };
   } catch (error) {
     logger.log({
       ts: Date.now(),
@@ -1034,7 +1375,23 @@ async function resolveRoisWithAnchorFirst(
       message: "Anchor-first ROI mapping failed. Falling back to static ROI grid.",
       data: { reason: error instanceof Error ? error.message : "unknown_error" }
     });
-    return { rois: fallback, anchorKeys: new Set<string>() };
+    logger.log({
+      ts: Date.now(),
+      stage: "extractor",
+      level: "debug",
+      message: "Anchor-first ROI fallback to static.",
+      data: {
+        reason: error instanceof Error ? error.message : "anchor_mapping_failure",
+        fallbackUsed: true
+      }
+    });
+    return {
+      rois: fallback,
+      anchorKeys: new Set<string>(),
+      anchorsFoundCount: 0,
+      anchorKeysTop: [],
+      fallbackUsed: true
+    };
   }
 }
 
@@ -1051,6 +1408,7 @@ function makeRankedCandidate(params: {
 }): RankedCandidate {
   const validated = validateByField(params.field, params.normalized);
   return {
+    field: params.field,
     pass_id: params.pass_id,
     source: params.source,
     psm: params.psm,
@@ -1137,12 +1495,14 @@ export class RfInternalPassportExtractor {
 
       tmp = await mkdtemp(join(tmpdir(), "keiscore-rfpass-"));
 
-      const { rois, anchorKeys } = await resolveRoisWithAnchorFirst(normalized, logger, width, height, pageIndex);
+      const { rois, anchorKeys, anchorsFoundCount, anchorKeysTop, fallbackUsed, deptCodeAnchorBox } =
+        await resolveRoisWithAnchorFirst(normalized, logger, width, height, pageIndex);
       const thresholdStrategyUsed = normalized.preprocessing?.thresholdStrategy ?? "legacy";
 
       const debugDir = process.env.KEISCORE_DEBUG_ROI_DIR ? String(process.env.KEISCORE_DEBUG_ROI_DIR) : "";
       if (debugDir) {
         try {
+          await mkdir(debugDir, { recursive: true });
           const overlay = await sharp(pagePath)
             .composite(
               Object.values(rois).map((r) => ({
@@ -1160,6 +1520,33 @@ export class RfInternalPassportExtractor {
           for (const [field, roi] of Object.entries(rois) as Array<[PassportField, RoiRect]>) {
             await cropToFile(pagePath, roi, join(debugDir, `${field}.png`));
           }
+          await writeFile(
+            join(debugDir, "roi_bbox_overlay.json"),
+            JSON.stringify(
+              {
+                width,
+                height,
+                rois
+              },
+              null,
+              2
+            ),
+            "utf8"
+          );
+          await writeFile(
+            join(debugDir, "extractor_anchor_audit.json"),
+            JSON.stringify(
+              {
+                anchorsFoundCount,
+                anchorKeys: anchorKeysTop,
+                fallbackUsed,
+                deptCodeAnchorBox: deptCodeAnchorBox ?? null
+              },
+              null,
+              2
+            ),
+            "utf8"
+          );
         } catch {
           // ignore
         }
@@ -1175,48 +1562,69 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const variants: Array<{ passId: "A" | "B" | "C"; roi: RoiRect; psmList: number[]; confidence: number }> = [
+          { passId: "A", roi, psmList: [6], confidence: 0.82 },
+          {
+            passId: "B",
+            roi: expandRoi(roi, width, height, { left: 0.2, right: 0.2, top: 1.1, bottom: 0.8 }),
+            psmList: [7, 6],
+            confidence: 0.7
+          },
+          {
+            passId: "C",
+            roi: expandRoi(roi, width, height, { left: 0.35, right: 0.35, top: 1.4, bottom: 1.2 }),
+            psmList: [11, 7],
+            confidence: 0.6
+          }
+        ];
+        const allDebugPreviews: string[] = [];
+        const allDebugEmptyZones: Array<{ reason: string; crop_path: string | null }> = [];
+        for (const variant of variants) {
+          const linesRes = await ocrTsvLinesForRoi(
+            pagePath,
+            variant.roi,
+            tmp,
+            options.tesseractLang ?? "rus",
+            options.ocrTimeoutMs ?? 30_000,
+            "digits",
+            variant.psmList,
+            "0123456789№ ",
+            { field, passId: variant.passId }
+          );
+          allDebugPreviews.push(...linesRes.debug.previews);
+          allDebugEmptyZones.push(...linesRes.debug.emptyZones);
+          const joined = linesRes.lines.map((l) => l.text).join(" ");
+          const digits = normalizePassportNumber(joined);
+          const normalizedText = digits.length >= 10 ? `${digits.slice(0, 4)} ${digits.slice(4, 10)}` : digits;
 
-        const linesRes = await ocrTsvLinesForRoi(
-          pagePath,
-          roi,
-          tmp,
-          options.tesseractLang ?? "rus",
-          options.ocrTimeoutMs ?? 30_000,
-          "digits",
-          [6],
-          "0123456789№ "
-        );
-        const joined = linesRes.lines.map((l) => l.text).join(" ");
-        const digits = normalizePassportNumber(joined);
-        const normalizedText = digits.length >= 10 ? `${digits.slice(0, 4)} ${digits.slice(4, 10)}` : digits;
-
-        attempts.push({
-          pass_id: "A",
-          raw_text_preview: joined.slice(0, 120),
-          normalized_preview: normalizedText.slice(0, 120),
-          source: "zonal_tsv",
-          confidence: 0.82,
-          psm: 6
-        });
-        ranked.push(
-          makeRankedCandidate({
-            field,
-            pass_id: "A",
+          attempts.push({
+            pass_id: variant.passId,
+            raw_text_preview: joined.slice(0, 120),
+            normalized_preview: normalizedText.slice(0, 120),
             source: "zonal_tsv",
-            psm: 6,
-            raw: joined,
-            normalized: normalizedText,
-            confidence: 0.82,
-            anchorAlignmentScore,
-            regex: regexForField(field)
-          })
-        );
+            confidence: variant.confidence,
+            psm: variant.psmList[0] ?? 6
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: variant.passId,
+              source: "zonal_tsv",
+              psm: variant.psmList[0] ?? 6,
+              raw: joined,
+              normalized: normalizedText,
+              confidence: variant.confidence,
+              anchorAlignmentScore,
+              regex: regexForField(field)
+            })
+          );
+        }
         const rankedTop = rankCandidates(ranked);
         const best = rankedTop[0];
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: best?.normalized_preview ?? normalizedText,
+            preview: best?.normalized_preview ?? attempts[0]?.normalized_preview ?? "",
             normalized: best?.validated ?? "",
             confidence: best?.confidence ?? 0,
             source: (best?.source ?? "zonal_tsv") as BestCandidateSource,
@@ -1231,8 +1639,8 @@ export class RfInternalPassportExtractor {
         );
 
         fieldDebug[field] = {
-          zonal_tsv_lines_preview: linesRes.debug.previews,
-          zonal_tsv_empty_zones: linesRes.debug.emptyZones,
+          zonal_tsv_lines_preview: allDebugPreviews,
+          zonal_tsv_empty_zones: allDebugEmptyZones,
           thresholdStrategyUsed
         };
       }
@@ -1240,53 +1648,96 @@ export class RfInternalPassportExtractor {
       // dept_code
       {
         const field: PassportField = "dept_code";
-        const roi = rois[field];
+        if (tmp === null) {
+          throw new Error("Temporary OCR directory is not initialized");
+        }
+        const tmpDir = tmp;
+        const roi =
+          deptCodeAnchorBox === undefined
+            ? rois[field]
+            : buildDeptCodeRoiFromAnchorBox(deptCodeAnchorBox, width, height, rois[field].page);
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-
-        const linesRes = await ocrTsvLinesForRoi(
-          pagePath,
-          roi,
-          tmp,
-          options.tesseractLang ?? "rus",
-          options.ocrTimeoutMs ?? 30_000,
-          "digits",
-          [7],
-          "0123456789-"
+        const locatorCandidates =
+          deptCodeAnchorBox === undefined
+            ? [roi, shiftRoiVertical(roi, -12, height), shiftRoiVertical(roi, 12, height)]
+            : buildDeptCodeRoiCandidates(deptCodeAnchorBox, width, height, roi.page);
+        const scored = await Promise.all(
+          locatorCandidates.map(async (candidateRoi) => ({
+            roi: candidateRoi,
+            inkScore: await computeInkScore(pagePath, candidateRoi)
+          }))
         );
-        const joined = linesRes.lines.map((l) => l.text).join(" ");
-        const normalizedText = normalizeRussianText(joined)
-          .replace(/[^0-9\-]/gu, "")
-          .replace(/(\d{3})(\d{3})/u, "$1-$2");
-
-        attempts.push({
-          pass_id: "A",
-          raw_text_preview: joined.slice(0, 120),
-          normalized_preview: normalizedText.slice(0, 120),
-          source: "zonal_tsv",
-          confidence: 0.62,
-          psm: 7
-        });
-        ranked.push(
-          makeRankedCandidate({
-            field,
-            pass_id: "A",
+        const topCandidates = scored
+          .filter((item) => item.inkScore >= 0.01)
+          .sort((a, b) => b.inkScore - a.inkScore)
+          .slice(0, 6);
+        const debugDir = (process.env.KEISCORE_DEBUG_ROI_DIR ?? "").trim();
+        if (debugDir !== "") {
+          await writeFile(
+            join(debugDir, "dept_code_locator_candidates.json"),
+            JSON.stringify(
+              {
+                total: scored.length,
+                selectedTop: topCandidates.length,
+                candidates: scored.map((item) => ({
+                  roi: item.roi,
+                  inkScore: Number(item.inkScore.toFixed(6))
+                }))
+              },
+              null,
+              2
+            ),
+            "utf8"
+          ).catch(() => undefined);
+        }
+        for (let i = 0; i < topCandidates.length; i += 1) {
+          const item = topCandidates[i];
+          if (item === undefined) continue;
+          const passId: "A" | "B" | "C" = i === 0 ? "A" : i === 1 ? "B" : "C";
+          const lines = await ocrDeptCodeStrictLinesForRoi(
+            pagePath,
+            item.roi,
+            tmpDir,
+            options.tesseractLang ?? "rus",
+            options.ocrTimeoutMs ?? 30_000,
+            { field, passId: `loc${i + 1}` }
+          );
+          const joined = lines.map((l) => l.text).join(" ");
+          const normalizedText = normalizeDeptCodeStrict(joined);
+          const confidence = lines.reduce((best, line) => Math.max(best, line.avgConf), 0);
+          attempts.push({
+            pass_id: passId,
+            raw_text_preview: joined.slice(0, 120),
+            normalized_preview: normalizedText.slice(0, 120),
             source: "zonal_tsv",
-            psm: 7,
-            raw: joined,
-            normalized: normalizedText,
-            confidence: 0.62,
-            anchorAlignmentScore,
-            regex: regexForField(field)
-          })
-        );
+            confidence,
+            psm: 7
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: passId,
+              source: "zonal_tsv",
+              psm: 7,
+              raw: joined,
+              normalized: normalizedText,
+              confidence,
+              anchorAlignmentScore,
+              regex: regexForField(field)
+            })
+          );
+          if (/^\d{3}-\d{3}$/u.test(normalizedText)) {
+            break;
+          }
+        }
         const rankedTop = rankCandidates(ranked);
         const best = rankedTop[0];
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
-            preview: best?.normalized_preview ?? normalizedText,
+            preview: best?.normalized_preview ?? attempts[0]?.normalized_preview ?? "",
             normalized: best?.validated ?? "",
             confidence: best?.confidence ?? 0,
             source: (best?.source ?? "zonal_tsv") as BestCandidateSource,
@@ -1299,6 +1750,13 @@ export class RfInternalPassportExtractor {
             rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
           }, rankedTop.slice(0, 3))
         );
+        fieldDebug[field] = {
+          thresholdStrategyUsed,
+          locator_candidates: topCandidates.map((item) => ({
+            roi: item.roi,
+            inkScore: Number(item.inkScore.toFixed(6))
+          }))
+        };
       }
 
       // fio
@@ -1325,7 +1783,8 @@ export class RfInternalPassportExtractor {
               options.ocrTimeoutMs ?? 30_000,
               "text",
               [config.psm],
-              "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- "
+              "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- ",
+              { field, passId: config.passId }
             );
             const bestLine = linesRes.lines.sort((a, b) => b.avgConf - a.avgConf)[0];
             const clean = cleanCyrillicWords(bestLine?.text ?? "");
@@ -1366,7 +1825,8 @@ export class RfInternalPassportExtractor {
             tmp,
             options.tesseractLang ?? "rus",
             options.ocrTimeoutMs ?? 30_000,
-            6
+            6,
+            { field, passId: "C" }
           );
           const clean = cleanCyrillicWords(raw);
           attempts.push({
@@ -1428,7 +1888,9 @@ export class RfInternalPassportExtractor {
             options.tesseractLang ?? "rus",
             options.ocrTimeoutMs ?? 30_000,
             "text",
-            [config.psm]
+            [config.psm],
+            undefined,
+            { field, passId: config.passId }
           );
           const candidate = pickIssuedByCandidate(linesRes.lines);
           const normalized = normalizeRussianText(candidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
@@ -1493,7 +1955,9 @@ export class RfInternalPassportExtractor {
             options.tesseractLang ?? "rus",
             options.ocrTimeoutMs ?? 30_000,
             "text",
-            [config.psm]
+            [config.psm],
+            undefined,
+            { field, passId: config.passId }
           );
           const regCandidate = pickRegistrationCandidate(linesRes.lines);
           const normalized = normalizeRussianText(regCandidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));

@@ -38,6 +38,7 @@ export class AnchorModel {
     debugUnsafeIncludeRawText = false
   ): Promise<AnchorResult> {
     const anchors: AnchorResult["anchors"] = {};
+    const anchorBoxes: NonNullable<AnchorResult["anchorBoxes"]> = {};
     // 0) mock anchors
     const mockAnchors = input.mockLayout?.anchors ?? {};
     for (const key of Object.keys(mockAnchors)) {
@@ -77,12 +78,24 @@ export class AnchorModel {
         const exactOrContainsMatch = normalizedToken.includes(anchorWord);
         if (exactOrContainsMatch) {
           anchors[anchorWord] = { x: entry.token.bbox.x1, y: entry.token.bbox.y1 };
+          anchorBoxes[anchorWord] = {
+            x: entry.token.bbox.x1,
+            y: entry.token.bbox.y1,
+            width: Math.max(1, entry.token.bbox.x2 - entry.token.bbox.x1),
+            height: Math.max(1, entry.token.bbox.y2 - entry.token.bbox.y1)
+          };
           continue;
         }
         const prefixes = getAnchorPrefixes(anchorWord);
         const prefixMatch = prefixes.some((prefix) => normalizedToken.startsWith(prefix));
         if (prefixMatch) {
           anchors[anchorWord] = { x: entry.token.bbox.x1, y: entry.token.bbox.y1 };
+          anchorBoxes[anchorWord] = {
+            x: entry.token.bbox.x1,
+            y: entry.token.bbox.y1,
+            width: Math.max(1, entry.token.bbox.x2 - entry.token.bbox.x1),
+            height: Math.max(1, entry.token.bbox.y2 - entry.token.bbox.y1)
+          };
         }
       }
     }
@@ -137,6 +150,17 @@ export class AnchorModel {
 
         if (ok) {
           anchors[anchorWord] = { x: start.token.bbox.x1, y: start.token.bbox.y1 };
+          const segment = sortedByLine.slice(i, i + parts.length);
+          const minX = Math.min(...segment.map((item) => item.token.bbox.x1));
+          const minY = Math.min(...segment.map((item) => item.token.bbox.y1));
+          const maxX = Math.max(...segment.map((item) => item.token.bbox.x2));
+          const maxY = Math.max(...segment.map((item) => item.token.bbox.y2));
+          anchorBoxes[anchorWord] = {
+            x: minX,
+            y: minY,
+            width: Math.max(1, maxX - minX),
+            height: Math.max(1, maxY - minY)
+          };
           break;
         }
       }
@@ -190,6 +214,7 @@ export class AnchorModel {
 
     return {
       anchors,
+      ...(Object.keys(anchorBoxes).length === 0 ? {} : { anchorBoxes }),
       baselineY,
       lineHeight,
       scale,

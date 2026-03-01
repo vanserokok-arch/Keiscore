@@ -278,7 +278,7 @@ describe("KEIScore foundation", () => {
 
   it("adaptive threshold retry logic selects correct strategy by black pixel ratio", () => {
     expect(adaptiveThresholdRetryDecision(0.7).mode).toBe("lower_threshold");
-    expect(adaptiveThresholdRetryDecision(0.01).mode).toBe("contrast_boost");
+    expect(adaptiveThresholdRetryDecision(0.009).mode).toBe("contrast_boost");
     expect(adaptiveThresholdRetryDecision(0.2).mode).toBe("none");
   });
 

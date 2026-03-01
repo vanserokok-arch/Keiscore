@@ -67,6 +67,23 @@ if (normalizedPagesAudit?.data) {
     )
   );
 }
+const extractorAnchorAudit = [...auditEvents]
+  .reverse()
+  .find((event) => event?.stage === "extractor" && event?.message === "Anchor-first ROI audit.");
+if (extractorAnchorAudit?.data) {
+  console.log("=== extractor_anchor_audit ===");
+  console.log(
+    JSON.stringify(
+      {
+        anchorsFoundCount: extractorAnchorAudit.data.anchorsFoundCount ?? 0,
+        anchorKeys: extractorAnchorAudit.data.anchorKeys ?? [],
+        fallbackUsed: Boolean(extractorAnchorAudit.data.fallbackUsed)
+      },
+      null,
+      2
+    )
+  );
+}
 
 const overlayArtifacts = await writeDebugZoneOverlay(res);
 if (overlayArtifacts !== null) {
@@ -88,8 +105,13 @@ if (normalization) {
         rotation_deg: normalization.rotationDeg,
         deskew_angle_deg: normalization.deskewAngleDeg,
         threshold: normalization.selectedThreshold,
+        threshold_strategy: normalization.thresholdStrategy ?? null,
+        retry_count: normalization.retryCount ?? null,
+        final_threshold: normalization.finalThreshold ?? normalization.selectedThreshold,
+        used_invert: normalization.usedInvert ?? false,
         orientation_score: normalization.orientationScore,
-        black_pixel_ratio: normalization.blackPixelRatio
+        black_pixel_ratio: normalization.blackPixelRatio,
+        final_black_pixel_ratio: normalization.finalBlackPixelRatio ?? normalization.blackPixelRatio
       },
       null,
       2
@@ -294,6 +316,10 @@ console.log(
 
 async function writeDebugZoneOverlay(result) {
   const debugDir = (process.env.KEISCORE_DEBUG_ROI_DIR ?? "").trim() || join(tmpdir(), "keiscore_debug_roi");
+  if ((process.env.KEISCORE_DEBUG_ROI_DIR ?? "").trim() !== "") {
+    console.log("=== debug_roi_dir ===");
+    console.log(JSON.stringify({ debugDir }, null, 2));
+  }
   await mkdir(debugDir, { recursive: true });
   const normalizedPagePath = await detectNormalizedPagePath(debugDir);
   if (normalizedPagePath === null) {

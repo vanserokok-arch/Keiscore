@@ -231,6 +231,8 @@ export interface NormalizedInput {
     blackPixelRatio: number;
     thresholdStrategy?: string;
     retryCount?: number;
+    usedInvert?: boolean;
+    finalThreshold?: number;
     finalBlackPixelRatio?: number;
   };
   mockLayout?: MockDocumentLayout;
@@ -258,8 +260,16 @@ export interface AnchorPoint {
   y: number;
 }
 
+export interface AnchorBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface AnchorResult {
   anchors: Record<string, AnchorPoint>;
+  anchorBoxes?: Record<string, AnchorBox>;
   baselineY: number | null;
   lineHeight: number;
   scale: number;
@@ -480,7 +490,12 @@ export const ExtractionResultSchema = z.object({
           rotationDeg: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
           orientationScore: z.number(),
           deskewAngleDeg: z.number(),
-          blackPixelRatio: z.number()
+          blackPixelRatio: z.number(),
+          thresholdStrategy: z.string().optional(),
+          retryCount: z.number().int().nonnegative().optional(),
+          usedInvert: z.boolean().optional(),
+          finalThreshold: z.number().optional(),
+          finalBlackPixelRatio: z.number().optional()
         })
         .optional(),
       field_debug: z
