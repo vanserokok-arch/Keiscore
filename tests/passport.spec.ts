@@ -43,11 +43,18 @@ describe("KEIScore foundation", () => {
     expect(validateDeptCode("123-456")).toBe("123-456");
     expect(validateIssuedBy("ГУ МВД РОССИИ ПО Г. МОСКВЕ 1234567890")).toBeNull();
     expect(validatePassportNumber("bad")).toBeNull();
+    expect(validatePassportNumber("0")).toBeNull();
     expect(validateDeptCode("12-1234")).toBeNull();
+    expect(validateDeptCode("")).toBeNull();
+    expect(validateIssuedBy("")).toBeNull();
   });
 
   it('validateFio rejects OCR-broken surname like "ВОЯОКОВЕ"', () => {
     expect(validateFio("ВОЯОКОВЕ АННА НИКОЛАЕВНА")).toBeNull();
+  });
+
+  it("validateFio rejects noisy punctuation-heavy OCR", () => {
+    expect(validateFio("..,,.. ВОЯ.ОКОВЕ !!! АННА ??? НИКОЛАЕВНА 12345")).toBeNull();
   });
 
   it("validateIssuedBy rejects long numeric tail candidate", () => {

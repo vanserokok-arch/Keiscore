@@ -67,6 +67,24 @@ const BASE_RESULT: Omit<ExtractionResult, "field_reports" | "errors" | "confiden
 
 const FIELD_ORDER: PassportField[] = ["fio", "passport_number", "issued_by", "dept_code", "registration"];
 
+function buildDiagnostics(
+  centralWindowTextPreview: string | undefined,
+  normalization: NonNullable<ExtractionResult["diagnostics"]>["normalization"] | undefined,
+  fieldDebug: Record<string, any> | undefined
+): NonNullable<ExtractionResult["diagnostics"]> | null {
+  const diagnostics: NonNullable<ExtractionResult["diagnostics"]> = {};
+  if (typeof centralWindowTextPreview === "string" && centralWindowTextPreview.trim() !== "") {
+    diagnostics.central_window_text_preview = centralWindowTextPreview;
+  }
+  if (normalization !== undefined) {
+    diagnostics.normalization = normalization;
+  }
+  if (fieldDebug !== undefined && Object.keys(fieldDebug).length > 0) {
+    diagnostics.field_debug = fieldDebug;
+  }
+  return Object.keys(diagnostics).length > 0 ? diagnostics : null;
+}
+
 function safeNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -209,7 +227,8 @@ function buildMockResult(layout: MockLayoutAny, logger?: AuditLogger): Extractio
   const w = Math.max(1, safeNumber(layout.width, 2000));
   const h = Math.max(1, safeNumber(layout.height, 1400));
 
-  const out: ExtractionResult = {
+  const diagnostics = buildDiagnostics(layout.centralWindowText, undefined, undefined);
+  const out = {
     fio: null,
     passport_number: null,
     issued_by: null,
@@ -221,20 +240,16 @@ function buildMockResult(layout: MockLayoutAny, logger?: AuditLogger): Extractio
       contrast_score: contrast,
       geometric_score: detected.confidence
     },
+    ...(diagnostics !== null ? { diagnostics } : {}),
     field_reports,
     errors
   };
-
-  // diagnostics только если есть текст
-  if (typeof layout.centralWindowText === "string" && layout.centralWindowText.trim() !== "") {
-    out.diagnostics = { central_window_text_preview: layout.centralWindowText };
-  }
 
   let totalConfidence = 0;
   let counted = 0;
 
   for (const field of FIELD_ORDER) {
-    const roi = roiFromRatios(field, w, h);
+    const roi = roiFromRatios(field, w, h, 0);
 
     if (isRegistrationPage && field !== "registration") {
       field_reports.push(emptyFieldReport(field, roi, "none"));
@@ -405,7 +420,7 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-function roiFromRatios(field: PassportField, w: number, h: number): RoiRect {
+function roiFromRatios(field: PassportField, w: number, h: number, page: number): RoiRect {
   // Stable fallback grid on normalized passport spread.
   const map: Record<PassportField, { x: number; y: number; w: number; h: number }> = {
     passport_number: { x: 0.58, y: 0.14, w: 0.34, h: 0.04 },
@@ -419,7 +434,7 @@ function roiFromRatios(field: PassportField, w: number, h: number): RoiRect {
   const y = clamp(Math.round(h * r.y), 0, h - 1);
   const rw = clamp(Math.round(w * r.w), 1, w - x);
   const rh = clamp(Math.round(h * r.h), 1, h - y);
-  return { x, y, width: rw, height: rh, page: 0 };
+  return { x, y, width: rw, height: rh, page };
 }
 
 async function cropToFile(srcPath: string, roi: RoiRect, outPath: string): Promise<void> {
@@ -765,9 +780,9 @@ function bestCandidateReport(
     pass_id: "A" | "B" | "C";
     raw_text_preview: string;
     normalized_preview: string;
-    source?: BestCandidateSource;
-    confidence?: number;
-    psm?: number;
+    source?: BestCandidateSource | undefined;
+    confidence?: number | undefined;
+    psm?: number | undefined;
   }>,
   best: {
     preview: string;
@@ -802,13 +817,23 @@ function bestCandidateReport(
       },
       top_candidates: [...attempts]
         .map((a) => ({
+          validated: validateByField(field, a.normalized_preview ?? ""),
           raw_preview: String(a.raw_text_preview ?? "").slice(0, 120),
           normalized_preview: String(a.normalized_preview ?? "").slice(0, 120),
           confidence: Number(a.confidence ?? 0),
           psm: a.psm ?? null,
           source: (a.source ?? "roi") as BestCandidateSource,
-          validator_passed: validateByField(field, a.normalized_preview ?? "") === null,
-          rejection_reason: validateByField(field, a.normalized_preview ?? "")
+          validator_passed: false,
+          rejection_reason: "FIELD_NOT_CONFIRMED" as string | null
+        }))
+        .map((a) => ({
+          raw_preview: a.raw_preview,
+          normalized_preview: a.normalized_preview,
+          confidence: a.confidence,
+          psm: a.psm,
+          source: a.source,
+          validator_passed: a.validated !== null,
+          rejection_reason: a.validated === null ? "FIELD_NOT_CONFIRMED" : null
         }))
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 3)
@@ -832,6 +857,21 @@ export class RfInternalPassportExtractor {
       });
 
       const normalized = await FormatNormalizer.normalize(input, options, logger);
+      logger.log({
+        ts: Date.now(),
+        stage: "extractor",
+        level: "info",
+        message: "Normalized pages prepared.",
+        data: {
+          pdfPageRange: options.pdfPageRange ?? null,
+          normalized_pages: normalized.pages.map((page) => ({
+            pageNumber: page.pageNumber,
+            width: page.width,
+            height: page.height,
+            hasImagePath: page.imagePath !== null
+          }))
+        }
+      });
 
       if (normalized.mockLayout) {
         return buildMockResult(normalized.mockLayout as any, logger);
@@ -842,7 +882,7 @@ export class RfInternalPassportExtractor {
 
       if (!pagePath) {
         errors.push({ code: "INTERNAL_ERROR", message: "Normalized page image is missing." });
-        const out: ExtractionResult = {
+        const out = {
           ...BASE_RESULT,
           confidence_score: 0,
           field_reports: FIELD_ORDER.map((f) =>
@@ -857,6 +897,8 @@ export class RfInternalPassportExtractor {
       const pageMeta = normalized.pages?.[0];
       const fallbackW = pageMeta?.width ?? normalized.width ?? 0;
       const fallbackH = pageMeta?.height ?? normalized.height ?? 0;
+      const normalizedPageNumber = pageMeta?.pageNumber ?? 0;
+      const pageIndex = Math.max(0, Math.floor(normalizedPageNumber));
 
       const width = normalized.width || fallbackW;
       const height = normalized.height || fallbackH;
@@ -864,11 +906,11 @@ export class RfInternalPassportExtractor {
       tmp = await mkdtemp(join(tmpdir(), "keiscore-rfpass-"));
 
       const rois: Record<PassportField, RoiRect> = {
-        fio: roiFromRatios("fio", width, height),
-        passport_number: roiFromRatios("passport_number", width, height),
-        issued_by: roiFromRatios("issued_by", width, height),
-        dept_code: roiFromRatios("dept_code", width, height),
-        registration: roiFromRatios("registration", width, height)
+        fio: roiFromRatios("fio", width, height, pageIndex),
+        passport_number: roiFromRatios("passport_number", width, height, pageIndex),
+        issued_by: roiFromRatios("issued_by", width, height, pageIndex),
+        dept_code: roiFromRatios("dept_code", width, height, pageIndex),
+        registration: roiFromRatios("registration", width, height, pageIndex)
       };
 
       const debugDir = process.env.KEISCORE_DEBUG_ROI_DIR ? String(process.env.KEISCORE_DEBUG_ROI_DIR) : "";
@@ -897,10 +939,7 @@ export class RfInternalPassportExtractor {
       }
 
       const fieldReports: FieldReport[] = [];
-      const diagnostics: ExtractionResult["diagnostics"] = {
-        ...(normalized.preprocessing ? { normalization: normalized.preprocessing } : {}),
-        field_debug: {}
-      };
+      const fieldDebug: Record<string, any> = {};
 
       // passport_number
       {
@@ -919,7 +958,7 @@ export class RfInternalPassportExtractor {
         );
         const joined = linesRes.lines.map((l) => l.text).join(" ");
         const normalizedText = normalizePassportNumber(joined);
-        const err = validatePassportNumber(normalizedText);
+        const validated = validatePassportNumber(normalizedText);
 
         attempts.push({
           pass_id: "C",
@@ -934,15 +973,15 @@ export class RfInternalPassportExtractor {
           bestCandidateReport(field, roi, attempts, {
             preview: normalizedText,
             normalized: normalizedText,
-            confidence: err === null ? 0.9 : 0,
+            confidence: validated !== null ? 0.9 : 0,
             source: "zonal_tsv",
             pass_id: "C",
-            validator_passed: err === null,
-            rejection_reason: err
+            validator_passed: validated !== null,
+            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
           })
         );
 
-        (diagnostics.field_debug as any)[field] = {
+        fieldDebug[field] = {
           zonal_tsv_lines_preview: linesRes.debug.previews,
           zonal_tsv_empty_zones: linesRes.debug.emptyZones
         };
@@ -967,7 +1006,7 @@ export class RfInternalPassportExtractor {
         const normalizedText = normalizeRussianText(joined)
           .replace(/[^0-9\-]/gu, "")
           .replace(/(\d{3})(\d{3})/u, "$1-$2");
-        const err = validateDeptCode(normalizedText);
+        const validated = validateDeptCode(normalizedText);
 
         attempts.push({
           pass_id: "C",
@@ -982,11 +1021,11 @@ export class RfInternalPassportExtractor {
           bestCandidateReport(field, roi, attempts, {
             preview: normalizedText,
             normalized: normalizedText,
-            confidence: err === null ? 0.55 : 0,
+            confidence: validated !== null ? 0.55 : 0,
             source: "zonal_tsv",
             pass_id: "C",
-            validator_passed: err === null,
-            rejection_reason: err
+            validator_passed: validated !== null,
+            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
           })
         );
       }
@@ -1032,17 +1071,17 @@ export class RfInternalPassportExtractor {
 
         const bestAttempt = attempts.find((a) => (a.normalized_preview ?? "").trim().length > 0) ?? attempts[0];
         const normalizedText = normalizeRussianText(bestAttempt?.normalized_preview ?? "");
-        const err = validateFio(normalizedText);
+        const validated = validateFio(normalizedText);
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
             preview: normalizedText,
             normalized: normalizedText,
-            confidence: err === null ? Number(bestAttempt?.confidence ?? 0) : 0,
+            confidence: validated !== null ? Number(bestAttempt?.confidence ?? 0) : 0,
             source: (bestAttempt?.source ?? "roi") as BestCandidateSource,
             pass_id: "C",
-            validator_passed: err === null,
-            rejection_reason: err
+            validator_passed: validated !== null,
+            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
           })
         );
       }
@@ -1088,17 +1127,17 @@ export class RfInternalPassportExtractor {
 
         const bestAttempt = attempts.find((a) => (a.normalized_preview ?? "").trim().length > 0) ?? attempts[0];
         const normalizedText = normalizeRussianText(bestAttempt?.normalized_preview ?? "");
-        const err = validateIssuedBy(normalizedText);
+        const validated = validateIssuedBy(normalizedText);
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
             preview: normalizedText,
             normalized: normalizedText,
-            confidence: err === null ? Number(bestAttempt?.confidence ?? 0) : 0,
+            confidence: validated !== null ? Number(bestAttempt?.confidence ?? 0) : 0,
             source: (bestAttempt?.source ?? "roi") as BestCandidateSource,
             pass_id: "C",
-            validator_passed: err === null,
-            rejection_reason: err
+            validator_passed: validated !== null,
+            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
           })
         );
       }
@@ -1144,24 +1183,25 @@ export class RfInternalPassportExtractor {
 
         const bestAttempt = attempts.find((a) => (a.normalized_preview ?? "").trim().length > 0) ?? attempts[0];
         const normalizedText = normalizeRussianText(bestAttempt?.normalized_preview ?? "");
-        const err = validateRegistration(normalizedText);
+        const validated = validateRegistration(normalizedText);
 
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
             preview: normalizedText,
             normalized: normalizedText,
-            confidence: err === null ? Number(bestAttempt?.confidence ?? 0) : 0,
+            confidence: validated !== null ? Number(bestAttempt?.confidence ?? 0) : 0,
             source: (bestAttempt?.source ?? "roi") as BestCandidateSource,
             pass_id: "C",
-            validator_passed: err === null,
-            rejection_reason: err
+            validator_passed: validated !== null,
+            rejection_reason: validated === null ? "FIELD_NOT_CONFIRMED" : null
           })
         );
       }
 
+      const diagnostics = buildDiagnostics(undefined, normalized.preprocessing, fieldDebug);
       const get = (f: PassportField) => fieldReports.find((r) => r.field === f) ?? null;
 
-      const result: ExtractionResult = {
+      const result = {
         ...BASE_RESULT,
         fio: get("fio")?.validator_passed ? (get("fio")?.best_candidate_normalized ?? null) : null,
         passport_number: get("passport_number")?.validator_passed
@@ -1171,7 +1211,7 @@ export class RfInternalPassportExtractor {
         dept_code: get("dept_code")?.validator_passed ? (get("dept_code")?.best_candidate_normalized ?? null) : null,
         registration: get("registration")?.validator_passed ? (get("registration")?.best_candidate_normalized ?? null) : null,
         confidence_score: 0.6,
-        diagnostics,
+        ...(diagnostics !== null ? { diagnostics } : {}),
         field_reports: fieldReports,
         errors
       };
@@ -1194,10 +1234,9 @@ export class RfInternalPassportExtractor {
       return ExtractionResultSchema.parse(result);
     } catch (e) {
       const core = toCoreError(e);
-      const fallback: ExtractionResult = {
+      const fallback = {
         ...BASE_RESULT,
         confidence_score: 0,
-        diagnostics: {},
         field_reports: FIELD_ORDER.map((f) =>
           emptyFieldReport(f, { x: 0, y: 0, width: 0, height: 0, page: 0 }, "none")
         ),

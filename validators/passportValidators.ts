@@ -8,15 +8,18 @@ import {
 export const PASSPORT_NUMBER_REGEX = /^\d{4}\s№\d{6}$/u;
 export const DEPT_CODE_REGEX = /^\d{3}-\d{3}$/u;
 export const FIO_REGEX = /^[А-ЯЁ-]+(?:\s+[А-ЯЁ-]+){2}$/u;
-export const ISSUED_BY_REGEX = /^[А-ЯЁ0-9\s"().,\-]{10,}$/u;
+export const ISSUED_BY_REGEX = /^[А-ЯЁ0-9\s"().,\-]{12,}$/u;
 export const REGISTRATION_REGEX = /^[А-ЯЁ0-9\s"().,\-]{20,}$/u;
 
 const MRZ_MARKER_REGEX = /P<N?RUS[A-Z<]?|PNRUS[A-Z<]?|NRUS[A-Z<]?/u;
 const CYRILLIC_SURNAME_REGEX = /^[А-ЯЁ-]+$/u;
 
 export function validatePassportNumber(value: string): string | null {
+  if (value.trim().length === 0) {
+    return null;
+  }
   const compact = normalizePassportNumber(value);
-  if (!/^\d{10}$/u.test(compact)) {
+  if (compact.length !== 10 || !/^\d{10}$/u.test(compact)) {
     return null;
   }
   const formatted = `${compact.slice(0, 4)} №${compact.slice(4)}`;
@@ -27,6 +30,9 @@ export function validatePassportNumber(value: string): string | null {
 }
 
 export function validateDeptCode(value: string): string | null {
+  if (value.trim().length === 0) {
+    return null;
+  }
   const normalized = normalizeDeptCode(value);
   if (!DEPT_CODE_REGEX.test(normalized)) {
     return null;
@@ -35,6 +41,9 @@ export function validateDeptCode(value: string): string | null {
 }
 
 export function validateFio(value: string): string | null {
+  if (value.trim().length === 0 || hasHighFioNoiseRatio(value)) {
+    return null;
+  }
   const normalized = normalizeFioCandidate(value);
   if (normalized === null) {
     return null;
@@ -48,6 +57,9 @@ export function validateFio(value: string): string | null {
   }
   const [surname, name, patronymic] = parts;
   if (surname === undefined || name === undefined || patronymic === undefined) {
+    return null;
+  }
+  if (!parts.every((part) => /^[А-ЯЁ-]+$/u.test(part))) {
     return null;
   }
   if (!passesFioSurnameQualityGuard(surname)) {
@@ -185,6 +197,9 @@ export function assessFioSurnameQuality(surname: string): SurnameQualityResult {
 }
 
 export function validateIssuedBy(value: string): string | null {
+  if (value.trim().length === 0) {
+    return null;
+  }
   if (/[<‹«]/u.test(value) || value.includes("<<<")) {
     return null;
   }
@@ -192,7 +207,7 @@ export function validateIssuedBy(value: string): string | null {
     .split(" ")
     .filter((part) => !isNoiseToken(part))
     .join(" ");
-  if (!ISSUED_BY_REGEX.test(normalized) || normalized.length < 18) {
+  if (!ISSUED_BY_REGEX.test(normalized) || normalized.length < 12) {
     return null;
   }
   const normalizedForDigitChecks = normalized.replace(/O/gu, "0");
@@ -209,7 +224,7 @@ export function validateIssuedBy(value: string): string | null {
   if (words.length < 2) {
     return null;
   }
-  const markersFound = /(ГУ|МВД|РОССИИ|УФМС|ОТДЕЛ|УПРАВЛ|ПАСПОРТ)/u.test(normalized);
+  const markersFound = /(ГУ|МВД|УФМС|РОССИИ)/u.test(normalized);
   if (!markersFound) {
     return null;
   }
@@ -226,6 +241,9 @@ export function validateIssuedBy(value: string): string | null {
 }
 
 export function validateRegistration(value: string): string | null {
+  if (value.trim().length === 0) {
+    return null;
+  }
   const normalized = normalizeRussianText(value)
     .split(" ")
     .filter((part) => !isNoiseToken(part))
@@ -268,6 +286,15 @@ function isSuspiciousFioWord(value: string): boolean {
     return true;
   }
   return false;
+}
+
+function hasHighFioNoiseRatio(value: string): boolean {
+  const compact = value.replace(/\s+/gu, "");
+  if (compact.length === 0) {
+    return true;
+  }
+  const noisyChars = (compact.match(/[0-9.,:;!?()[\]{}"'@#$%^&*_+=\\/|<>№]/gu) ?? []).length;
+  return noisyChars / compact.length > 0.2;
 }
 
 function passesFioSurnameQualityGuard(surname: string): boolean {

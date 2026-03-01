@@ -4,11 +4,30 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import { extractRfInternalPassport } from "./dist/index.js";
 
-const filePath = process.argv[2];
+const argv = process.argv.slice(2);
+const filePath = argv[0];
 if (!filePath) {
-  console.error("Usage: node smoke.mjs /path/to/passport.pdf");
+  console.error("Usage: node smoke.mjs /path/to/passport.pdf [--from=0 --to=0]");
   process.exit(1);
 }
+const fromArg = argv.find((arg) => arg.startsWith("--from="));
+const toArg = argv.find((arg) => arg.startsWith("--to="));
+const from = fromArg ? Number.parseInt(fromArg.slice("--from=".length), 10) : undefined;
+const to = toArg ? Number.parseInt(toArg.slice("--to=".length), 10) : undefined;
+const pdfPageRange =
+  Number.isFinite(from) || Number.isFinite(to)
+    ? {
+        from: Number.isFinite(from) ? Math.max(0, Math.floor(from)) : Math.max(0, Math.floor(to ?? 0)),
+        to: Number.isFinite(to)
+          ? Math.max(
+              Number.isFinite(from) ? Math.max(0, Math.floor(from)) : Math.max(0, Math.floor(to)),
+              Math.floor(to)
+            )
+          : Number.isFinite(from)
+            ? Math.max(0, Math.floor(from))
+            : 0
+      }
+    : undefined;
 
 const auditEvents = [];
 const logger = {
@@ -18,8 +37,36 @@ const logger = {
 };
 const res = await extractRfInternalPassport(
   { kind: "path", path: filePath },
-  { preferOnline: false, pdfRenderTimeoutMs: 120000, debugUnsafeIncludeRawText: true, logger }
+  {
+    preferOnline: false,
+    pdfRenderTimeoutMs: 120000,
+    debugUnsafeIncludeRawText: true,
+    logger,
+    ...(pdfPageRange ? { pdfPageRange } : {})
+  }
 );
+
+const normalizedPagesAudit = auditEvents.find(
+  (event) => event?.stage === "extractor" && event?.message === "Normalized pages prepared."
+);
+const normalizerAuditEvents = auditEvents.filter((event) => event?.stage === "normalizer");
+if (normalizerAuditEvents.length > 0) {
+  console.log("=== normalizer_audit ===");
+  console.log(JSON.stringify(normalizerAuditEvents, null, 2));
+}
+if (normalizedPagesAudit?.data) {
+  console.log("=== normalized_pages ===");
+  console.log(
+    JSON.stringify(
+      {
+        pdfPageRange: normalizedPagesAudit.data.pdfPageRange ?? null,
+        normalized_pages: normalizedPagesAudit.data.normalized_pages ?? []
+      },
+      null,
+      2
+    )
+  );
+}
 
 const overlayArtifacts = await writeDebugZoneOverlay(res);
 if (overlayArtifacts !== null) {

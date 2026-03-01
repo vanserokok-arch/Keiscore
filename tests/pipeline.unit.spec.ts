@@ -71,6 +71,7 @@ describe("real pipeline units (mocked deps)", () => {
   it("returns ENGINE_UNAVAILABLE if pdftoppm is missing", async () => {
     const { execaMock } = setupMocks();
     const { FormatNormalizer } = await import("../format/formatNormalizer.js");
+    vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
     execaMock.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "ENOENT" }));
 
     const run = FormatNormalizer.normalize(
@@ -84,6 +85,126 @@ describe("real pipeline units (mocked deps)", () => {
     );
     await expect(run).rejects.toMatchObject({
       coreError: { code: "ENGINE_UNAVAILABLE" }
+    });
+  });
+
+  it("emits normalizer audit for valid page range", async () => {
+    const { execaMock } = setupMocks();
+    const { FormatNormalizer } = await import("../format/formatNormalizer.js");
+    vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
+    execaMock.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "ENOENT" }));
+    const logger = new InMemoryAuditLogger();
+
+    const run = FormatNormalizer.normalize(
+      {
+        kind: "buffer",
+        filename: "doc.pdf",
+        data: Buffer.from("%PDF-1.4")
+      },
+      { pdfPageRange: { from: 0, to: 0 } },
+      logger
+    );
+    await expect(run).rejects.toMatchObject({
+      coreError: { code: "ENGINE_UNAVAILABLE" }
+    });
+    expect(execaMock).toHaveBeenCalled();
+    const normalizerAudit = logger.getEvents().find(
+      (event) => event.stage === "normalizer" && event.message === "PDF page range resolved."
+    );
+    expect(normalizerAudit).toBeDefined();
+    expect(normalizerAudit?.data).toMatchObject({
+      pageCount: 1,
+      requestedRange: { from: 0, to: 0 },
+      resolvedRange0based: { from: 0, to: 0 },
+      pdftoppmRange1based: { f: 1, l: 1 }
+    });
+    const pdftoppmRange = (normalizerAudit?.data as { pdftoppmRange1based?: { f: number; l: number } } | undefined)
+      ?.pdftoppmRange1based;
+    const resolved = (normalizerAudit?.data as { resolvedRange0based?: { from: number; to: number } } | undefined)
+      ?.resolvedRange0based;
+    expect(pdftoppmRange?.f).toBe((resolved?.from ?? 0) + 1);
+    expect(pdftoppmRange?.l).toBe((resolved?.to ?? 0) + 1);
+  });
+
+  it("fails fast with INTERNAL_ERROR for invalid pdfPageRange using page-count preflight", async () => {
+    const { execaMock } = setupMocks();
+    const { FormatNormalizer } = await import("../format/formatNormalizer.js");
+    vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
+
+    const run = FormatNormalizer.normalize(
+      {
+        kind: "buffer",
+        filename: "doc.pdf",
+        data: Buffer.from("%PDF-1.4")
+      },
+      { pdfPageRange: { from: 1, to: 2 } },
+      new InMemoryAuditLogger()
+    );
+    await expect(run).rejects.toMatchObject({
+      coreError: {
+        code: "INTERNAL_ERROR",
+        message: expect.stringContaining("Invalid PDF page range"),
+        details: {
+          pageCount: 1,
+          requestedRange: { from: 1, to: 2 }
+        }
+      }
+    });
+    expect(execaMock).not.toHaveBeenCalled();
+  });
+
+  it("fails fast with INTERNAL_ERROR for boundary invalid pdfPageRange values", async () => {
+    const badRanges = [
+      { from: 0, to: 1 },
+      { from: -1, to: 0 },
+      { from: 1, to: 0 },
+      { from: 1, to: 1 }
+    ];
+    for (const requestedRange of badRanges) {
+      const { execaMock } = setupMocks();
+      const { FormatNormalizer } = await import("../format/formatNormalizer.js");
+      vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
+
+      const run = FormatNormalizer.normalize(
+        {
+          kind: "buffer",
+          filename: "doc.pdf",
+          data: Buffer.from("%PDF-1.4")
+        },
+        { pdfPageRange: requestedRange },
+        new InMemoryAuditLogger()
+      );
+      await expect(run).rejects.toMatchObject({
+        coreError: {
+          code: "INTERNAL_ERROR",
+          message: "Invalid PDF page range.",
+          details: {
+            pageCount: 1,
+            requestedRange
+          }
+        }
+      });
+      expect(execaMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it("preserves structured errors thrown during pdftoppm call", async () => {
+    const { execaMock } = setupMocks();
+    const { FormatNormalizer } = await import("../format/formatNormalizer.js");
+    vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
+    execaMock.mockRejectedValueOnce(Object.assign(new Error("structured"), { coreError: { code: "INTERNAL_ERROR", message: "preserve_me" } }));
+
+    const run = FormatNormalizer.normalize(
+      {
+        kind: "buffer",
+        filename: "doc.pdf",
+        data: Buffer.from("%PDF-1.4")
+      },
+      {},
+      new InMemoryAuditLogger()
+    );
+    await expect(run).rejects.toMatchObject({
+      coreError: { code: "INTERNAL_ERROR", message: "preserve_me" }
     });
   });
 
@@ -158,5 +279,41 @@ describe("real pipeline units (mocked deps)", () => {
     expect(args).toContain("tsv");
     expect(args).toContain("tessedit_char_whitelist=0123456789№- ");
     expect(lastCall?.[2]).toEqual({ timeout: 1000, reject: false });
+  });
+
+  it("maps ROI with page index from normalized input pageNumber", async () => {
+    setupMocks();
+    const { DynamicROIMapper } = await import("../anchors/dynamicRoiMapper.js");
+    const rois = await DynamicROIMapper.map(
+      {
+        original: { kind: "buffer", filename: "doc.png", data: Buffer.from("image-data") },
+        mime: "image/png",
+        kind: "image",
+        pages: [{ pageNumber: 2, imagePath: null, width: 2500, height: 1800 }],
+        sourcePath: null,
+        fileName: "doc.png",
+        buffer: Buffer.from("image-data"),
+        normalizedBuffer: Buffer.from("normalized-png"),
+        width: 2500,
+        height: 1800,
+        quality_metrics: { blur_score: 1, contrast_score: 1, noise_score: 0 },
+        warnings: [],
+        skewAngleDeg: 0
+      },
+      { detected: true, docType: "RF_INTERNAL_PASSPORT", confidence: 0.99 },
+      { geometricScore: 1, transform: "identity", alignedWidth: 2500, alignedHeight: 1800, stabilityNotes: [] },
+      {
+        anchors: {},
+        baselineY: null,
+        lineHeight: 40,
+        scale: 1,
+        usedFallbackGrid: true,
+        pageType: "spread_page"
+      },
+      new InMemoryAuditLogger()
+    );
+
+    expect(rois.length).toBeGreaterThan(0);
+    expect(rois.every((item) => item.roi.page === 2)).toBe(true);
   });
 });

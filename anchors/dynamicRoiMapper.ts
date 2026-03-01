@@ -51,7 +51,8 @@ export class DynamicROIMapper {
     detection: DocumentDetection,
     calibration: PerspectiveCalibration,
     anchors: AnchorResult,
-    logger: AuditLogger
+    logger: AuditLogger,
+    pageNumber?: number
   ): Promise<FieldRoi[]> {
     const metadata = input.normalizedBuffer === null ? null : await sharp(input.normalizedBuffer).metadata();
     const width = Math.max(
@@ -76,7 +77,10 @@ export class DynamicROIMapper {
       structured.coreError = coreError;
       throw structured;
     }
-    const page = 0;
+    const resolvedPageNumber = Number.isFinite(pageNumber)
+      ? Math.max(0, Math.floor(pageNumber ?? 0))
+      : Math.max(0, Math.floor((input.pages[0]?.pageNumber ?? 0)));
+    const page = resolvedPageNumber;
     const anchorsMap = anchors.anchors;
     const lineHeight = Math.max(24, anchors.lineHeight || 40);
     const snapY = (y: number) => snapToTextLine(y, anchors.textLineYs, lineHeight);

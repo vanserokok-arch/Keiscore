@@ -6,6 +6,7 @@ import { execa } from "execa";
 import { DynamicROIMapper } from "../anchors/dynamicRoiMapper.js";
 import { TesseractEngine } from "../engines/tesseractEngine.js";
 import { FormatNormalizer } from "../format/formatNormalizer.js";
+import { extractRfInternalPassport } from "../index.js";
 import { InMemoryAuditLogger } from "../types.js";
 
 async function commandExists(command: string): Promise<boolean> {
@@ -141,7 +142,7 @@ describe("optional real binary integration", () => {
     }
   });
 
-  it.skipIf(!shouldRun)("renders PDF using page range 2..3 with extended timeout", async () => {
+  it.skipIf(!shouldRun)("renders PDF using 0-based page range 1..2 with extended timeout", async () => {
     const hasPdftoppm = await commandExists("pdftoppm");
     if (!hasPdftoppm) {
       return;
@@ -152,14 +153,79 @@ describe("optional real binary integration", () => {
       await writeFile(pdfPath, buildThreePagePdfWithText(["PAGE-1", "PAGE-2", "PAGE-3"]));
       const normalized = await FormatNormalizer.normalize(
         { kind: "path", path: pdfPath },
-        { pdfPageRange: { from: 2, to: 3 }, pdfRenderTimeoutMs: 120_000 },
+        { pdfPageRange: { from: 1, to: 2 }, pdfRenderTimeoutMs: 120_000 },
         new InMemoryAuditLogger()
       );
       expect(normalized.kind).toBe("pdf");
       expect(normalized.pages.length).toBe(2);
-      expect(normalized.pages[0]?.pageNumber).toBe(2);
-      expect(normalized.pages[1]?.pageNumber).toBe(3);
+      expect(normalized.pages[0]?.pageNumber).toBe(1);
+      expect(normalized.pages[1]?.pageNumber).toBe(2);
       expect(normalized.pages.every((page) => page.width > 0 && page.height > 0)).toBe(true);
+      await FormatNormalizer.cleanupPdfPageArtifacts(normalized);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!shouldRun)("extractor audit logs normalized pages for pdfPageRange", async () => {
+    const hasPdftoppm = await commandExists("pdftoppm");
+    if (!hasPdftoppm) {
+      return;
+    }
+    const tempDir = await mkdtemp(join(tmpdir(), "keiscore-integration-"));
+    const pdfPath = join(tempDir, "sample-3-pages-audit.pdf");
+    const logger = new InMemoryAuditLogger();
+    try {
+      await writeFile(pdfPath, buildThreePagePdfWithText(["PAGE-1", "PAGE-2", "PAGE-3"]));
+      await extractRfInternalPassport(
+        { kind: "path", path: pdfPath },
+        { preferOnline: false, pdfPageRange: { from: 1, to: 2 }, logger }
+      );
+
+      const normalizedPagesEvent = logger
+        .getEvents()
+        .find((event) => event.stage === "extractor" && event.message === "Normalized pages prepared.");
+      expect(normalizedPagesEvent).toBeDefined();
+      expect(normalizedPagesEvent?.data).toMatchObject({
+        pdfPageRange: { from: 1, to: 2 },
+        normalized_pages: [{ pageNumber: 1 }, { pageNumber: 2 }]
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!shouldRun)("dynamic ROI mapper carries normalized PDF page index into roi.page", async () => {
+    const hasPdftoppm = await commandExists("pdftoppm");
+    if (!hasPdftoppm) {
+      return;
+    }
+    const tempDir = await mkdtemp(join(tmpdir(), "keiscore-integration-"));
+    const pdfPath = join(tempDir, "sample-3-pages-roi.pdf");
+    try {
+      await writeFile(pdfPath, buildThreePagePdfWithText(["PAGE-1", "PAGE-2", "PAGE-3"]));
+      const normalized = await FormatNormalizer.normalize(
+        { kind: "path", path: pdfPath },
+        { pdfPageRange: { from: 1, to: 2 }, pdfRenderTimeoutMs: 120_000 },
+        new InMemoryAuditLogger()
+      );
+      const rois = await DynamicROIMapper.map(
+        normalized,
+        { detected: true, docType: "RF_INTERNAL_PASSPORT", confidence: 0.99 },
+        { geometricScore: 1, transform: "identity", alignedWidth: normalized.width, alignedHeight: normalized.height, stabilityNotes: [] },
+        {
+          anchors: {},
+          baselineY: null,
+          lineHeight: 40,
+          scale: 1,
+          usedFallbackGrid: true,
+          pageType: "spread_page"
+        },
+        new InMemoryAuditLogger(),
+        normalized.pages[0]?.pageNumber
+      );
+      expect(rois.length).toBeGreaterThan(0);
+      expect(rois.every((item) => item.roi.page === 1)).toBe(true);
       await FormatNormalizer.cleanupPdfPageArtifacts(normalized);
     } finally {
       await rm(tempDir, { recursive: true, force: true });

@@ -141,7 +141,7 @@ export class FormatNormalizer {
         const firstPage = pages[0];
         const syncedFirstPage =
           firstPage === undefined
-            ? { pageNumber: 1, imagePath: null, width: normalizedGeometry.width, height: normalizedGeometry.height }
+            ? { pageNumber: 0, imagePath: null, width: normalizedGeometry.width, height: normalizedGeometry.height }
             : { ...firstPage, width: normalizedGeometry.width, height: normalizedGeometry.height };
         return {
           original: input,
@@ -178,7 +178,7 @@ export class FormatNormalizer {
         kind: "image",
         pages: [
           {
-            pageNumber: 1,
+            pageNumber: 0,
             imagePath: null,
             width: normalizedGeometry.width,
             height: normalizedGeometry.height
@@ -271,7 +271,7 @@ export class FormatNormalizer {
       const firstPage = pages[0];
       const syncedFirstPage =
         firstPage === undefined
-          ? { pageNumber: 1, imagePath: null, width: normalizedGeometry.width, height: normalizedGeometry.height }
+          ? { pageNumber: 0, imagePath: null, width: normalizedGeometry.width, height: normalizedGeometry.height }
           : { ...firstPage, width: normalizedGeometry.width, height: normalizedGeometry.height };
       return {
         original: input,
@@ -308,7 +308,7 @@ export class FormatNormalizer {
       kind: "image",
       pages: [
         {
-          pageNumber: 1,
+          pageNumber: 0,
           imagePath: null,
           width: normalizedGeometry.width,
           height: normalizedGeometry.height
@@ -388,13 +388,31 @@ export class FormatNormalizer {
     const tmpBase = await mkdtemp(join(tmpdir(), "keiscore-pdf-"));
     const outputPrefix = join(tmpBase, "page");
     const renderTimeoutMs = opts?.pdfRenderTimeoutMs ?? DEFAULT_PDF_RENDER_TIMEOUT_MS;
-    const requestedFrom = opts?.pdfPageRange?.from;
-    const requestedTo = opts?.pdfPageRange?.to;
-    const hasExplicitPageRange = requestedFrom !== undefined || requestedTo !== undefined;
-    const from = Math.max(1, Math.floor(requestedFrom ?? 1));
-    const to = Math.max(from, Math.floor(requestedTo ?? from));
+    const requestedRange =
+      opts?.pdfPageRange === undefined
+        ? null
+        : { from: Math.floor(opts.pdfPageRange.from), to: Math.floor(opts.pdfPageRange.to) };
+    const pageCount = await this.getPdfPageCount(sourcePath);
+    const resolvedRange0based = resolvePdfPageRange0Based(sourcePath, pageCount, requestedRange);
+    const pdftoppmFrom = resolvedRange0based.from + 1;
+    const pdftoppmTo = resolvedRange0based.to + 1;
+    logger?.log({
+      ts: Date.now(),
+      stage: "normalizer",
+      level: "info",
+      message: "PDF page range resolved.",
+      data: {
+        pageCount,
+        requestedRange,
+        resolvedRange0based,
+        pdftoppmRange1based: { f: pdftoppmFrom, l: pdftoppmTo }
+      }
+    });
     const pdftoppmArgs = [
-      ...(hasExplicitPageRange ? ["-f", String(from), "-l", String(to)] : []),
+      "-f",
+      String(pdftoppmFrom),
+      "-l",
+      String(pdftoppmTo),
       "-gray",
       "-r",
       "500",
@@ -420,10 +438,10 @@ export class FormatNormalizer {
           await writeFile(imagePath, normalizedImage.buffer);
           const metadata = await sharp(normalizedImage.buffer).metadata();
           const filePageNumber = Number.parseInt(fileName.slice("page-".length, -".png".length), 10);
-          const fallbackPage = hasExplicitPageRange ? from + index : index + 1;
+          const fallbackPage = resolvedRange0based.from + index;
           return {
             pageNumber:
-              Number.isFinite(filePageNumber) && filePageNumber > 0 ? filePageNumber : fallbackPage,
+              Number.isFinite(filePageNumber) && filePageNumber > 0 ? filePageNumber - 1 : fallbackPage,
             imagePath,
             width: Math.max(1, metadata.width ?? 1),
             height: Math.max(1, metadata.height ?? 1),
@@ -456,6 +474,9 @@ export class FormatNormalizer {
           details: { binary: "pdftoppm", sourcePath }
         });
       }
+      if (isStructuredCoreError(error)) {
+        throw error;
+      }
       logger?.log({
         ts: Date.now(),
         stage: "format-normalizer",
@@ -474,6 +495,123 @@ export class FormatNormalizer {
       }
     }
     throw new Error("Unreachable normalizePdfPath state.");
+  }
+
+  private static async getPdfPageCount(sourcePath: string): Promise<number> {
+    const pdfinfoPageCount = await this.tryGetPdfPageCountWithPdfinfo(sourcePath);
+    if (pdfinfoPageCount !== null) {
+      return pdfinfoPageCount;
+    }
+    const pdfJsPageCount = await this.tryGetPdfPageCountWithPdfJs(sourcePath);
+    if (pdfJsPageCount !== null) {
+      return pdfJsPageCount;
+    }
+    throwStructuredError({
+      code: "INTERNAL_ERROR",
+      message: "Failed to determine PDF page count.",
+      details: {
+        sourcePath,
+        reason: "Unable to determine page count with pdfinfo or pdfjs-dist."
+      }
+    });
+  }
+
+  private static async tryGetPdfPageCountWithPdfinfo(sourcePath: string): Promise<number | null> {
+    try {
+      const info = await execa("pdfinfo", [sourcePath], { timeout: 10_000 });
+      const pagesMatch = info.stdout.match(/^\s*Pages:\s*(\d+)\s*$/m);
+      const parsed = pagesMatch === null ? NaN : Number.parseInt(pagesMatch[1] ?? "", 10);
+      if (Number.isInteger(parsed) && parsed >= 1) {
+        return parsed;
+      }
+      throwStructuredError({
+        code: "INTERNAL_ERROR",
+        message: "Failed to determine PDF page count.",
+        details: {
+          sourcePath,
+          reason: "pdfinfo output does not contain a valid Pages value."
+        }
+      });
+    } catch (error) {
+      if (isBinaryMissing(error)) {
+        return null;
+      }
+      if (isStructuredCoreError(error)) {
+        throw error;
+      }
+      throwStructuredError({
+        code: "INTERNAL_ERROR",
+        message: "Failed to determine PDF page count.",
+        details: {
+          sourcePath,
+          reason: error instanceof Error ? error.message : "pdfinfo_failed"
+        }
+      });
+    }
+  }
+
+  private static async tryGetPdfPageCountWithPdfJs(sourcePath: string): Promise<number | null> {
+    const importAtRuntime = (new Function(
+      "specifier",
+      "return import(specifier);"
+    ) as (specifier: string) => Promise<Record<string, unknown>>);
+    let pdfjsModule: Record<string, unknown> | null = null;
+    try {
+      pdfjsModule = await importAtRuntime("pdfjs-dist/legacy/build/pdf.mjs");
+    } catch {
+      try {
+        pdfjsModule = await importAtRuntime("pdfjs-dist");
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const getDocumentCandidate = pdfjsModule.getDocument;
+      if (typeof getDocumentCandidate !== "function") {
+        throwStructuredError({
+          code: "INTERNAL_ERROR",
+          message: "Failed to determine PDF page count.",
+          details: {
+            sourcePath,
+            reason: "pdfjs-dist getDocument API is unavailable."
+          }
+        });
+      }
+      const data = await readFile(sourcePath);
+      const loadingTask = (
+        getDocumentCandidate as (input: { data: Uint8Array; disableWorker: boolean }) => {
+          promise: Promise<{ numPages: number }>;
+        }
+      )({
+        data: new Uint8Array(data),
+        disableWorker: true
+      });
+      const pdf = await loadingTask.promise;
+      const pageCount = Math.floor(pdf.numPages);
+      if (!Number.isInteger(pageCount) || pageCount < 1) {
+        throwStructuredError({
+          code: "INTERNAL_ERROR",
+          message: "Failed to determine PDF page count.",
+          details: {
+            sourcePath,
+            reason: "pdfjs-dist returned an invalid page count."
+          }
+        });
+      }
+      return pageCount;
+    } catch (error) {
+      if (isStructuredCoreError(error)) {
+        throw error;
+      }
+      throwStructuredError({
+        code: "INTERNAL_ERROR",
+        message: "Failed to determine PDF page count.",
+        details: {
+          sourcePath,
+          reason: error instanceof Error ? error.message : "pdfjs_failed"
+        }
+      });
+    }
   }
 
   private static async normalizePdfBuffer(
@@ -535,6 +673,53 @@ function isBinaryMissing(error: unknown): boolean {
   }
   const joined = `${execaError.message} ${execaError.stderr ?? ""} ${execaError.shortMessage ?? ""}`;
   return joined.toLowerCase().includes("command not found");
+}
+
+function isStructuredCoreError(error: unknown): error is { coreError: CoreError } {
+  return typeof error === "object" && error !== null && "coreError" in error;
+}
+
+function resolvePdfPageRange0Based(
+  sourcePath: string,
+  pageCount: number,
+  requestedRange: { from: number; to: number } | null
+): { from: number; to: number } {
+  const suggestedRange0based = { from: 0, to: Math.max(0, pageCount - 1) };
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throwStructuredError({
+      code: "INTERNAL_ERROR",
+      message: "Failed to determine PDF page count.",
+      details: {
+        sourcePath,
+        reason: "Resolved PDF page count is invalid."
+      }
+    });
+  }
+  if (requestedRange === null) {
+    return suggestedRange0based;
+  }
+  const { from, to } = requestedRange;
+  const isValid =
+    Number.isInteger(from) &&
+    Number.isInteger(to) &&
+    from >= 0 &&
+    to >= from &&
+    from < pageCount &&
+    to < pageCount;
+  if (isValid) {
+    return { from, to };
+  }
+  throwStructuredError({
+    code: "INTERNAL_ERROR",
+    message: "Invalid PDF page range.",
+    details: {
+      sourcePath,
+      pageCount,
+      requestedRange,
+      suggestedRange0based,
+      pdftoppmRange1basedAttempt: { f: from + 1, l: to + 1 }
+    }
+  });
 }
 
 function parseMockLayout(buffer: Buffer): MockDocumentLayout | undefined {

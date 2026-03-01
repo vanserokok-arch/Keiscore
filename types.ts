@@ -124,8 +124,8 @@ export interface RoiBBox {
 export interface FieldReport {
   field: PassportField;
   roi: RoiRect;
-  roiImagePath?: string;
-  postprocessed_roi_image_path?: string;
+  roiImagePath?: string | undefined;
+  postprocessed_roi_image_path?: string | undefined;
   engine_used: "online" | "tesseract" | "none";
   pass: boolean;
   pass_id?: "A" | "B" | "C" | undefined;
@@ -137,13 +137,13 @@ export interface FieldReport {
     pass_id: "A" | "B" | "C";
     raw_text_preview: string;
     normalized_preview: string;
-    source?: "roi" | "mrz" | "zonal_tsv" | "page";
-    confidence?: number;
-    psm?: number;
-  }>;
-  best_candidate_preview?: string;
-  best_candidate_source?: "roi" | "mrz" | "zonal_tsv" | "page";
-  best_candidate_normalized?: string;
+    source?: "roi" | "mrz" | "zonal_tsv" | "page" | undefined;
+    confidence?: number | undefined;
+    psm?: number | undefined;
+  }> | undefined;
+  best_candidate_preview?: string | undefined;
+  best_candidate_source?: "roi" | "mrz" | "zonal_tsv" | "page" | undefined;
+  best_candidate_normalized?: string | undefined;
   debug_candidates?: {
     source_counts: Record<"roi" | "mrz" | "zonal_tsv" | "page", number>;
     top_candidates: Array<{
@@ -155,7 +155,7 @@ export interface FieldReport {
       validator_passed: boolean;
       rejection_reason: string | null;
     }>;
-  };
+  } | undefined;
 }
 
 export interface ExtractionResult {
@@ -172,10 +172,10 @@ export interface ExtractionResult {
   };
 
   diagnostics?: {
-    central_window_text_preview?: string;
-    normalization?: NormalizedInput["preprocessing"];
-    field_debug?: Record<string, any>;
-  };
+    central_window_text_preview?: string | undefined;
+    normalization?: Record<string, any> | undefined;
+    field_debug?: Record<string, any> | undefined;
+  } | undefined;
 
   field_reports: FieldReport[];
   errors: CoreError[];
