@@ -170,27 +170,13 @@ export interface ExtractionResult {
     contrast_score: number;
     geometric_score: number;
   };
+
   diagnostics?: {
     central_window_text_preview?: string;
     normalization?: NormalizedInput["preprocessing"];
-    field_debug?: Partial<
-      Record<
-        "fio" | "issued_by",
-        {
-          source_counts: Record<"roi" | "mrz" | "zonal_tsv" | "page", number>;
-          top_candidates: Array<{
-            raw_preview: string;
-            normalized_preview: string;
-            confidence: number;
-            psm: number | null;
-            source: "roi" | "mrz" | "zonal_tsv" | "page";
-            validator_passed: boolean;
-            rejection_reason: string | null;
-          }>;
-        }
-      >
-    >;
+    field_debug?: Record<string, any>;
   };
+
   field_reports: FieldReport[];
   errors: CoreError[];
 }
@@ -303,6 +289,11 @@ export interface OcrPassResult {
   source?: "roi" | "mrz" | "zonal_tsv" | "page";
   psm?: number;
   postprocessed_roi_image_path?: string;
+  zonal_tsv_lines_preview?: string[];
+  zonal_tsv_empty_zones?: Array<{
+    reason: string;
+    crop_path: string | null;
+  }>;
 }
 
 export interface OcrRouterResult {
@@ -499,7 +490,16 @@ export const ExtractionResultSchema = z.object({
                   validator_passed: z.boolean(),
                   rejection_reason: z.string().nullable()
                 })
-              )
+              ),
+              zonal_tsv_lines_preview: z.array(z.string()).optional(),
+              zonal_tsv_empty_zones: z
+                .array(
+                  z.object({
+                    reason: z.string(),
+                    crop_path: z.string().nullable()
+                  })
+                )
+                .optional()
             })
             .optional(),
           issued_by: z
@@ -520,7 +520,16 @@ export const ExtractionResultSchema = z.object({
                   validator_passed: z.boolean(),
                   rejection_reason: z.string().nullable()
                 })
-              )
+              ),
+              zonal_tsv_lines_preview: z.array(z.string()).optional(),
+              zonal_tsv_empty_zones: z
+                .array(
+                  z.object({
+                    reason: z.string(),
+                    crop_path: z.string().nullable()
+                  })
+                )
+                .optional()
             })
             .optional()
         })

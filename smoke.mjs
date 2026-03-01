@@ -264,12 +264,12 @@ async function writeDebugZoneOverlay(result) {
   }
 
   const zonesPercent = [
-    { name: "fio_zone_1", leftR: 0.1, topR: 0.31, rightR: 0.78, bottomR: 0.365, color: "#34d399" },
-    { name: "fio_zone_2", leftR: 0.1, topR: 0.355, rightR: 0.78, bottomR: 0.41, color: "#10b981" },
-    { name: "fio_zone_3", leftR: 0.1, topR: 0.4, rightR: 0.78, bottomR: 0.46, color: "#059669" },
-    { name: "issued_zone_1", leftR: 0.4, topR: 0.28, rightR: 0.96, bottomR: 0.35, color: "#60a5fa" },
-    { name: "issued_zone_2", leftR: 0.4, topR: 0.34, rightR: 0.96, bottomR: 0.41, color: "#3b82f6" },
-    { name: "issued_zone_3", leftR: 0.4, topR: 0.4, rightR: 0.96, bottomR: 0.48, color: "#2563eb" }
+    { name: "fio_zone_1", leftR: 0.08, topR: 0.39, rightR: 0.8, bottomR: 0.44, color: "#34d399" },
+    { name: "fio_zone_2", leftR: 0.08, topR: 0.42, rightR: 0.8, bottomR: 0.47, color: "#10b981" },
+    { name: "fio_zone_3", leftR: 0.08, topR: 0.45, rightR: 0.8, bottomR: 0.5, color: "#059669" },
+    { name: "issued_zone_1", leftR: 0.4, topR: 0.32, rightR: 0.98, bottomR: 0.4, color: "#60a5fa" },
+    { name: "issued_zone_2", leftR: 0.4, topR: 0.35, rightR: 0.98, bottomR: 0.43, color: "#3b82f6" },
+    { name: "issued_zone_3", leftR: 0.4, topR: 0.38, rightR: 0.98, bottomR: 0.46, color: "#2563eb" }
   ];
   const zonesPx = zonesPercent.map((zone) => {
     const left = Math.max(0, Math.round(width * zone.leftR));

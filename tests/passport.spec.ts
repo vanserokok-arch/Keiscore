@@ -84,6 +84,19 @@ describe("KEIScore foundation", () => {
     expect(selected).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
   });
 
+  it("fio selector chooses TSV line with VOLОХОВИЧ over garbage", () => {
+    const selected = selectBestFioFromCyrillicLines(
+      [
+        "ВОЯОКОВЕ АННА НИКОЛАЕВНА",
+        "ЛЕНИНГРАДСКАЯ ОБЛАСТЬ",
+        "ВОЛОХОвИЧ АННА НИКОЛАЕВНА",
+        "ГУ МВД РОССИИ"
+      ],
+      ["ВОЛОХОВИЧ"]
+    );
+    expect(selected).toBe("ВОЛОХОВИЧ АННА НИКОЛАЕВНА");
+  });
+
   it("issued_by line-merge builds stable candidate from TSV words", () => {
     const words: TsvWord[] = [
       {
@@ -175,7 +188,7 @@ describe("KEIScore foundation", () => {
     expect(validated).toContain("ЛЕНИНГРАДСКОЙ");
   });
 
-  it("issued_by line-merge rejects long numeric tail chunks", () => {
+  it("issued_by line-merge rejects 6+ digit numeric tail chunks", () => {
     const words: TsvWord[] = [
       {
         text: "ГУ",
@@ -202,7 +215,7 @@ describe("KEIScore foundation", () => {
         bbox: { x1: 238, y1: 200, x2: 350, y2: 224 }
       },
       {
-        text: "0200728470021",
+        text: "123456",
         confidence: 95,
         blockNum: 1,
         parNum: 1,
@@ -210,8 +223,8 @@ describe("KEIScore foundation", () => {
         bbox: { x1: 110, y1: 236, x2: 350, y2: 260 }
       }
     ];
-    const candidates = buildIssuedByCandidatesFromTsvWords(words).map((item) => item.text);
-    expect(candidates.some((item) => /\d{6,}/u.test(item))).toBe(false);
+    const candidates = buildIssuedByCandidatesFromTsvWords(words).map((item: { text: string }) => item.text);
+    expect(candidates.some((item: string) => /\d{6,}/u.test(item))).toBe(false);
   });
 
   it("extracts all fields on ideal scan", async () => {
