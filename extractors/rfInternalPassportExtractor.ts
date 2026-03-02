@@ -15,6 +15,7 @@ import {
   validateIssuedBy,
   validatePassportNumber,
   validateRegistration,
+  assessFioSurnameQuality,
   parseMrzLatinFio,
   transliterateMrzLatinToCyrillic
 } from "../validators/passportValidators.js";
@@ -1589,7 +1590,16 @@ function normalizeSearchToken(input: string): string {
   return token;
 }
 
-type SearchAnchorLabel = "ФАМИЛИЯ" | "ИМЯ" | "ОТЧЕСТВО" | "КЕМ" | "ВЫДАН" | "ПОДРАЗД" | "КОД";
+type SearchAnchorLabel =
+  | "ФАМИЛИЯ"
+  | "ИМЯ"
+  | "ОТЧЕСТВО"
+  | "КЕМ"
+  | "ВЫДАН"
+  | "ПОДРАЗД"
+  | "КОД"
+  | "МЕСТО ЖИТЕЛЬСТВА"
+  | "ЗАРЕГИСТРИРОВАН";
 type SearchAnchorHit = {
   label: SearchAnchorLabel;
   bbox: AnchorBox;
@@ -1640,6 +1650,7 @@ function anchorLabelByToken(token: string): SearchAnchorLabel | null {
   if (/ВЫД/u.test(token)) return "ВЫДАН";
   if (/ПОДРАЗ/u.test(token)) return "ПОДРАЗД";
   if (/^КОД$/u.test(token)) return "КОД";
+  if (/ЗАРЕГИСТР/u.test(token)) return "ЗАРЕГИСТРИРОВАН";
   return null;
 }
 
@@ -1657,6 +1668,30 @@ function findAnchorHits(words: TsvWord[]): SearchAnchorHit[] {
       confidence: clamp01(Number(word.confidence ?? 0)),
       token
     });
+  }
+  const lines = groupWordsIntoLines(words);
+  for (const line of lines) {
+    const lineWords = words.filter((item) => getLineKey(item) === line.key);
+    const lineBoxes = lineWords.map((item) => bboxFromWord(item)).filter((item): item is AnchorBox => item !== null);
+    const lineBbox = unionBboxes(lineBoxes);
+    if (lineBbox === null) continue;
+    const lineToken = normalizeSearchToken(line.text.replace(/\s+/gu, ""));
+    if (lineToken.includes("МЕСТО") && /ЖИТ/u.test(lineToken)) {
+      hits.push({
+        label: "МЕСТО ЖИТЕЛЬСТВА",
+        bbox: lineBbox,
+        confidence: clamp01(line.avgConf),
+        token: lineToken
+      });
+    }
+    if (lineToken.includes("ЗАРЕГИСТРИРОВАН") || /ЗАРЕГИСТР/u.test(lineToken)) {
+      hits.push({
+        label: "ЗАРЕГИСТРИРОВАН",
+        bbox: lineBbox,
+        confidence: clamp01(line.avgConf),
+        token: lineToken
+      });
+    }
   }
   const byLabel = new Map<SearchAnchorLabel, SearchAnchorHit>();
   for (const hit of hits) {
@@ -1865,6 +1900,84 @@ export function selectFioFromThreeZones(zoneLines: string[]): string | null {
   return validateFio(candidate) ?? null;
 }
 
+function normalizeAnchorLineToken(raw: string): string {
+  return normalizeRussianText(raw)
+    .replace(/[^А-ЯЁЙ\- ]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function validateFioStrictThreeTokens(raw: string): string | null {
+  const normalized = normalizeAnchorLineToken(raw);
+  if (!normalized || /\d/u.test(normalized)) return null;
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (tokens.length !== 3) return null;
+  if (!tokens.every((token) => /^[А-ЯЁЙ-]{2,}$/u.test(token))) return null;
+  return tokens.join(" ");
+}
+
+function normalizeRegistrationAnchorCandidate(raw: string): string {
+  return normalizeRussianText(raw)
+    .replace(/[^А-ЯЁ0-9\s.,\-\/]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function validateRegistrationAnchorCandidate(raw: string): string | null {
+  const normalized = normalizeRegistrationAnchorCandidate(raw);
+  if (normalized.length < 25) return null;
+  if (computeRussianCharRatio(normalized) <= 0.35) return null;
+  if (!/(?:\bГ\.?\b|\bУЛ\.?\b|\bД\.?\b|\bКВ\.?\b|САНКТ-ПЕТЕРБУРГ)/u.test(normalized)) return null;
+  return normalized;
+}
+
+function buildFioLineRoi(anchor: AnchorBox, pageWidth: number, pageHeight: number, page: number): RoiRect {
+  const x = anchor.x + anchor.width + 10;
+  const y = anchor.y - Math.round(anchor.height * 0.2);
+  const width = Math.max(260, pageWidth - x - 28);
+  const height = clampIntValue(anchor.height * 1.6, 34, 92);
+  return makeRoi(pageWidth, pageHeight, page, x, y, width, height);
+}
+
+function buildRegistrationRoiFromAnchor(anchor: AnchorBox, pageWidth: number, pageHeight: number, page: number): RoiRect {
+  const x = anchor.x - 12;
+  const y = anchor.y + anchor.height + 14;
+  const width = Math.max(900, pageWidth - x - 20);
+  const height = clampIntValue(anchor.height * 7, 180, 420);
+  return makeRoi(pageWidth, pageHeight, page, x, y, width, height);
+}
+
+async function ocrSingleLineToken(params: {
+  pagePath: string;
+  roi: RoiRect;
+  tmpDir: string;
+  lang: string;
+  timeoutMs: number;
+  debugDir: string;
+  debugPrefix: string;
+}): Promise<{ token: string | null; raw: string; roi: RoiRect }> {
+  const base = `${params.debugPrefix}_${params.roi.x}_${params.roi.y}_${params.roi.width}_${params.roi.height}`;
+  const cropPath = join(params.tmpDir, `${base}_before.png`);
+  const prePath = join(params.tmpDir, `${base}_after.png`);
+  await cropToFile(params.pagePath, params.roi, cropPath);
+  await preprocessForOcr(cropPath, prePath, "text_v2");
+  if (params.debugDir !== "") {
+    await sharp(cropPath).png().toFile(join(params.debugDir, `${params.debugPrefix}_before.png`)).catch(() => undefined);
+    await sharp(prePath).png().toFile(join(params.debugDir, `${params.debugPrefix}_after.png`)).catch(() => undefined);
+  }
+  const [raw7, raw8] = await Promise.all([
+    runTesseractPlain(prePath, params.lang, params.timeoutMs, 7),
+    runTesseractPlain(prePath, params.lang, params.timeoutMs, 8)
+  ]);
+  const bestRaw =
+    normalizeAnchorLineToken(raw7).replace(/\s+/gu, "").length >= normalizeAnchorLineToken(raw8).replace(/\s+/gu, "").length
+      ? raw7
+      : raw8;
+  const token = normalizeAnchorLineToken(bestRaw).split(" ").filter(Boolean).sort((a, b) => b.length - a.length)[0] ?? "";
+  const validToken = /^[А-ЯЁЙ-]{2,}$/u.test(token) && !/\d/u.test(token) ? token : null;
+  return { token: validToken, raw: String(bestRaw ?? "").trim(), roi: params.roi };
+}
+
 async function resolveRoisWithAnchorFirst(
   normalized: Awaited<ReturnType<typeof FormatNormalizer.normalize>>,
   logger: AuditLogger,
@@ -2004,8 +2117,9 @@ function makeRankedCandidate(params: {
   anchorAlignmentScore: number;
   regex?: RegExp | null;
   markerMatch?: number;
+  validatedOverride?: string | null;
 }): RankedCandidate {
-  const validated = validateByField(params.field, params.normalized);
+  const validated = params.validatedOverride === undefined ? validateByField(params.field, params.normalized) : params.validatedOverride;
   return {
     field: params.field,
     pass_id: params.pass_id,
@@ -2150,6 +2264,19 @@ export class RfInternalPassportExtractor {
           issued_by: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
           registration: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" }
         }
+      };
+      const detailedAudit: {
+        anchors: Array<{ label: string; confidence: number; bbox: AnchorBox }>;
+        fio: Record<string, unknown>;
+        registration: Record<string, unknown>;
+      } = {
+        anchors: searchAnchorHits.map((item) => ({
+          label: item.label,
+          confidence: Number(item.confidence.toFixed(4)),
+          bbox: item.bbox
+        })),
+        fio: { strategy: "anchor_lines", status: "pending" },
+        registration: { strategy: "anchor_below_sweep", status: "pending" }
       };
       (normalized.preprocessing ??= {
         applied: true,
@@ -2541,139 +2668,237 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-        const pageLines = groupWordsIntoLines(pageForSearchWords).map((line) => ({ text: line.text, avgConf: line.avgConf }));
-        const pageFio = pickFioCandidate(pageLines);
-        if (pageFio !== null) {
-          attempts.push({
-            pass_id: "C",
-            raw_text_preview: pageFio.value.slice(0, 120),
-            normalized_preview: pageFio.value.slice(0, 120),
-            source: "page",
-            confidence: clamp01(pageFio.conf),
-            psm: 11
-          });
-          ranked.push(
-            makeRankedCandidate({
-              field,
-              pass_id: "C",
-              source: "page",
-              psm: 11,
-              raw: pageFio.value,
-              normalized: pageFio.value,
-              confidence: clamp01(pageFio.conf),
-              anchorAlignmentScore
-            })
-          );
+        const fioAnchorByLabel = new Map<SearchAnchorLabel, SearchAnchorHit>();
+        for (const hit of searchAnchorHits) {
+          fioAnchorByLabel.set(hit.label, hit);
         }
-        const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
-          { passId: "A", psm: 6 },
-          { passId: "B", psm: 11 }
-        ];
-        for (const config of passConfigs) {
-          const zoneRois = splitRoiIntoHorizontalZones(roi, 3);
-          const zoneTexts: string[] = [];
-          let zoneConfidence = 0;
-          for (const zoneRoi of zoneRois) {
-            const linesRes = await ocrTsvLinesForRoi(
+        const surnameAnchor = fioAnchorByLabel.get("ФАМИЛИЯ");
+        const nameAnchor = fioAnchorByLabel.get("ИМЯ");
+        const patronymicAnchor = fioAnchorByLabel.get("ОТЧЕСТВО");
+        const anchorLineParts: Array<{ label: "surname" | "name" | "patronymic"; token: string }> = [];
+        const anchorLineAudit: Array<Record<string, unknown>> = [];
+        if (surnameAnchor && nameAnchor && patronymicAnchor) {
+          const slices: Array<{ key: "surname" | "name" | "patronymic"; anchor: SearchAnchorHit }> = [
+            { key: "surname", anchor: surnameAnchor },
+            { key: "name", anchor: nameAnchor },
+            { key: "patronymic", anchor: patronymicAnchor }
+          ];
+          for (const slice of slices) {
+            const lineRoi = buildFioLineRoi(slice.anchor.bbox, width, height, roi.page);
+            const lineOcr = await ocrSingleLineToken({
               pagePath,
-              zoneRoi,
-              tmp,
-              options.tesseractLang ?? "rus",
-              options.ocrTimeoutMs ?? 30_000,
-              useVariant2 ? "text_v2" : "text",
-              [config.psm],
-              "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- ",
-              { field, passId: config.passId }
-            );
-            const bestLine = linesRes.lines.sort((a, b) => b.avgConf - a.avgConf)[0];
-            const clean = antiNoiseCyrillicTokens(cleanCyrillicWords(bestLine?.text ?? ""));
-            if (clean.length >= 3 && clean.length <= 30 && !/\d/u.test(clean)) {
-              zoneTexts.push(clean);
-              zoneConfidence += Number(bestLine?.avgConf ?? 0);
+              roi: lineRoi,
+              tmpDir: tmp,
+              lang: options.tesseractLang ?? "rus",
+              timeoutMs: options.ocrTimeoutMs ?? 30_000,
+              debugDir,
+              debugPrefix: `fio_line_slices_${slice.key}`
+            });
+            anchorLineAudit.push({
+              key: slice.key,
+              anchorLabel: slice.anchor.label,
+              anchorBBox: slice.anchor.bbox,
+              roi: lineRoi,
+              token: lineOcr.token,
+              rawPreview: lineOcr.raw.slice(0, 120),
+              accepted: lineOcr.token !== null
+            });
+            if (lineOcr.token !== null) {
+              anchorLineParts.push({ label: slice.key, token: lineOcr.token });
             }
           }
-          const assembledFio = selectFioFromThreeZones(zoneTexts);
-          if (assembledFio !== null) {
-            const normalized = normalizeRussianText(assembledFio);
+          const byOrder = ["surname", "name", "patronymic"] as const;
+          const assembled = byOrder.map((key) => anchorLineParts.find((item) => item.label === key)?.token ?? "").join(" ").trim();
+          const strictFio = validateFioStrictThreeTokens(assembled);
+          const surnameToken = strictFio?.split(" ")[0] ?? "";
+          const surnameQualityOk = strictFio !== null && assessFioSurnameQuality(surnameToken).ok;
+          if (strictFio !== null && surnameQualityOk) {
             attempts.push({
-              pass_id: config.passId,
-              raw_text_preview: assembledFio.slice(0, 120),
-              normalized_preview: normalized.slice(0, 120),
+              pass_id: "A",
+              raw_text_preview: assembled.slice(0, 120),
+              normalized_preview: strictFio.slice(0, 120),
               source: "zonal_tsv",
-              confidence: zoneConfidence / 3,
-              psm: config.psm
+              confidence: 0.82,
+              psm: 7
             });
             ranked.push(
               makeRankedCandidate({
                 field,
-                pass_id: config.passId,
+                pass_id: "A",
                 source: "zonal_tsv",
-                psm: config.psm,
-                raw: assembledFio,
-                normalized,
-                confidence: zoneConfidence / 3,
+                psm: 7,
+                raw: assembled,
+                normalized: strictFio,
+                confidence: 0.82,
+                anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.95),
+                markerMatch: 1,
+                validatedOverride: strictFio
+              })
+            );
+            detailedAudit.fio = {
+              strategy: "anchor_lines",
+              status: "accepted",
+              anchorLabels: ["ФАМИЛИЯ", "ИМЯ", "ОТЧЕСТВО"],
+              slices: anchorLineAudit,
+              assembled: strictFio
+            };
+          } else {
+            detailedAudit.fio = {
+              strategy: "anchor_lines",
+              status: "rejected",
+              reason: "FIO_STRICT_VALIDATOR_FAILED",
+              anchorLabels: ["ФАМИЛИЯ", "ИМЯ", "ОТЧЕСТВО"],
+              slices: anchorLineAudit,
+              assembled,
+              surnameQualityOk
+            };
+          }
+        } else {
+          detailedAudit.fio = {
+            strategy: "anchor_lines",
+            status: "missing_anchors",
+            found: {
+              surname: surnameAnchor !== undefined,
+              name: nameAnchor !== undefined,
+              patronymic: patronymicAnchor !== undefined
+            }
+          };
+        }
+        if (ranked.length === 0) {
+          const pageLines = groupWordsIntoLines(pageForSearchWords).map((line) => ({ text: line.text, avgConf: line.avgConf }));
+          const pageFio = pickFioCandidate(pageLines);
+          if (pageFio !== null) {
+            attempts.push({
+              pass_id: "C",
+              raw_text_preview: pageFio.value.slice(0, 120),
+              normalized_preview: pageFio.value.slice(0, 120),
+              source: "page",
+              confidence: clamp01(pageFio.conf),
+              psm: 11
+            });
+            ranked.push(
+              makeRankedCandidate({
+                field,
+                pass_id: "C",
+                source: "page",
+                psm: 11,
+                raw: pageFio.value,
+                normalized: pageFio.value,
+                confidence: clamp01(pageFio.conf),
                 anchorAlignmentScore
               })
             );
           }
-        }
-        if (ranked.length === 0) {
-          const raw = await ocrPlainText(
-            pagePath,
-            roi,
-            tmp,
-            options.tesseractLang ?? "rus",
-            options.ocrTimeoutMs ?? 30_000,
-            6,
-            { field, passId: "C" }
-          );
-          const clean = cleanCyrillicWords(raw);
-          attempts.push({
-            pass_id: "C",
-            raw_text_preview: raw.slice(0, 120),
-            normalized_preview: clean.slice(0, 120),
-            source: "roi",
-            confidence: 0.15,
-            psm: 6
-          });
-          ranked.push(
-            makeRankedCandidate({
-              field,
-              pass_id: "C",
-              source: "roi",
-              psm: 6,
-              raw,
-              normalized: clean,
-              confidence: 0.15,
-              anchorAlignmentScore,
-              markerMatch: textMarkerScore(field, clean)
-            })
-          );
-        }
-        if (!ranked.some((candidate) => candidate.validated !== null)) {
-          const mrz = await extractMrzFioFromPage(pagePath, tmp, options.ocrTimeoutMs ?? 30_000);
-          if (mrz !== null) {
+          const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
+            { passId: "A", psm: 6 },
+            { passId: "B", psm: 11 }
+          ];
+          for (const config of passConfigs) {
+            const zoneRois = splitRoiIntoHorizontalZones(roi, 3);
+            const zoneTexts: string[] = [];
+            let zoneConfidence = 0;
+            for (const zoneRoi of zoneRois) {
+              const linesRes = await ocrTsvLinesForRoi(
+                pagePath,
+                zoneRoi,
+                tmp,
+                options.tesseractLang ?? "rus",
+                options.ocrTimeoutMs ?? 30_000,
+                useVariant2 ? "text_v2" : "text",
+                [config.psm],
+                "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- ",
+                { field, passId: config.passId }
+              );
+              const bestLine = linesRes.lines.sort((a, b) => b.avgConf - a.avgConf)[0];
+              const clean = antiNoiseCyrillicTokens(cleanCyrillicWords(bestLine?.text ?? ""));
+              if (clean.length >= 3 && clean.length <= 30 && !/\d/u.test(clean)) {
+                zoneTexts.push(clean);
+                zoneConfidence += Number(bestLine?.avgConf ?? 0);
+              }
+            }
+            const assembledFio = selectFioFromThreeZones(zoneTexts);
+            if (assembledFio !== null) {
+              const normalized = normalizeRussianText(assembledFio);
+              attempts.push({
+                pass_id: config.passId,
+                raw_text_preview: assembledFio.slice(0, 120),
+                normalized_preview: normalized.slice(0, 120),
+                source: "zonal_tsv",
+                confidence: zoneConfidence / 3,
+                psm: config.psm
+              });
+              ranked.push(
+                makeRankedCandidate({
+                  field,
+                  pass_id: config.passId,
+                  source: "zonal_tsv",
+                  psm: config.psm,
+                  raw: assembledFio,
+                  normalized,
+                  confidence: zoneConfidence / 3,
+                  anchorAlignmentScore
+                })
+              );
+            }
+          }
+          if (ranked.length === 0) {
+            const raw = await ocrPlainText(
+              pagePath,
+              roi,
+              tmp,
+              options.tesseractLang ?? "rus",
+              options.ocrTimeoutMs ?? 30_000,
+              6,
+              { field, passId: "C" }
+            );
+            const clean = cleanCyrillicWords(raw);
             attempts.push({
               pass_id: "C",
-              raw_text_preview: mrz.raw.slice(0, 120),
-              normalized_preview: mrz.fio.slice(0, 120),
-              source: "mrz",
-              confidence: 0.72,
+              raw_text_preview: raw.slice(0, 120),
+              normalized_preview: clean.slice(0, 120),
+              source: "roi",
+              confidence: 0.15,
               psm: 6
             });
             ranked.push(
               makeRankedCandidate({
                 field,
                 pass_id: "C",
-                source: "mrz",
+                source: "roi",
                 psm: 6,
-                raw: mrz.raw,
-                normalized: mrz.fio,
-                confidence: 0.72,
-                anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.5),
-                markerMatch: 1
+                raw,
+                normalized: clean,
+                confidence: 0.15,
+                anchorAlignmentScore,
+                markerMatch: textMarkerScore(field, clean)
               })
             );
+          }
+          if (!ranked.some((candidate) => candidate.validated !== null)) {
+            const mrz = await extractMrzFioFromPage(pagePath, tmp, options.ocrTimeoutMs ?? 30_000);
+            if (mrz !== null) {
+              attempts.push({
+                pass_id: "C",
+                raw_text_preview: mrz.raw.slice(0, 120),
+                normalized_preview: mrz.fio.slice(0, 120),
+                source: "mrz",
+                confidence: 0.72,
+                psm: 6
+              });
+              ranked.push(
+                makeRankedCandidate({
+                  field,
+                  pass_id: "C",
+                  source: "mrz",
+                  psm: 6,
+                  raw: mrz.raw,
+                  normalized: mrz.fio,
+                  confidence: 0.72,
+                  anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.5),
+                  markerMatch: 1
+                })
+              );
+            }
           }
         }
         const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
@@ -2696,7 +2921,7 @@ export class RfInternalPassportExtractor {
         extractorAudit.fields[field] = {
           roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio",
           chosenPass: best?.pass_id ?? "C",
-          chosenSweep: "split3",
+          chosenSweep: "anchor-lines",
           bestCandidatePreview: best?.normalized_preview ?? ""
         };
       }
@@ -2856,120 +3081,107 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-        const pageLines = groupWordsIntoLines(pageForSearchWords).map((line) => ({ text: line.text, avgConf: line.avgConf }));
-        const pageRegistration = pickRegistrationCandidate(pageLines);
-        if (pageRegistration !== null) {
-          const normalized = normalizeRussianText(pageRegistration.value);
-          attempts.push({
-            pass_id: "C",
-            raw_text_preview: normalized.slice(0, 120),
-            normalized_preview: normalized.slice(0, 120),
-            source: "page",
-            confidence: clamp01(pageRegistration.conf),
-            psm: 11
-          });
-          ranked.push(
-            makeRankedCandidate({
-              field,
-              pass_id: "C",
-              source: "page",
-              psm: 11,
-              raw: normalized,
-              normalized,
-              confidence: clamp01(pageRegistration.conf),
-              anchorAlignmentScore,
-              markerMatch: textMarkerScore(field, normalized)
-            })
-          );
-        }
-        const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
-          { passId: "A", psm: 6 },
-          { passId: "B", psm: 11 }
-        ];
-        for (const config of passConfigs) {
-          const linesRes = await ocrTsvLinesForRoi(
-            pagePath,
-            roi,
-            tmp,
-            options.tesseractLang ?? "rus",
-            options.ocrTimeoutMs ?? 30_000,
-            useVariant2 ? "text_v2" : "text",
-            [config.psm],
-            undefined,
-            { field, passId: config.passId }
-          );
-          const regCandidate = pickRegistrationCandidate(linesRes.lines);
-          const normalized = normalizeRussianText(regCandidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
-          if (normalized.length <= 10) continue;
-          attempts.push({
-            pass_id: config.passId,
-            raw_text_preview: normalized.slice(0, 120),
-            normalized_preview: normalized.slice(0, 120),
-            source: "zonal_tsv",
-            confidence: regCandidate?.conf ?? 0.1,
-            psm: config.psm
-          });
-          ranked.push(
-            makeRankedCandidate({
-              field,
-              pass_id: config.passId,
-              source: "zonal_tsv",
-              psm: config.psm,
-              raw: normalized,
-              normalized,
-              confidence: regCandidate?.conf ?? 0.1,
-              anchorAlignmentScore,
-              markerMatch: textMarkerScore(field, normalized)
-            })
-          );
-        }
-        if (!ranked.some((candidate) => candidate.validated !== null)) {
-          const startedAt = Date.now();
-          const sweepBudgetMs = useVariant2 ? 4_000 : 3_000;
-          const sweeps = buildProblemFieldSweeps(roi, width, height, 120, 20, 16);
-          sweepLoop: for (const sweep of sweeps) {
-            for (const psm of [6, 11, 4]) {
-              if (Date.now() - startedAt > sweepBudgetMs) break sweepLoop;
-              const linesRes = await ocrTsvLinesForRoi(
-                pagePath,
-                sweep.roi,
-                tmp,
-                options.tesseractLang ?? "rus",
-                options.ocrTimeoutMs ?? 30_000,
-                useVariant2 ? "text_v2" : "text",
-                [psm],
-                undefined,
-                { field, passId: `C_${sweep.sweep}_psm${psm}` }
-              );
-              const regCandidate = pickRegistrationCandidate(linesRes.lines);
-              const normalized = normalizeRussianText(regCandidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
-              if (normalized.length <= 12) continue;
-              const confidence = clamp01(regCandidate?.conf ?? 0.12);
+        const sourceName =
+          input.kind === "path"
+            ? input.path.toLowerCase()
+            : input.filename.toLowerCase();
+        const sourceLooksRegistration = sourceName.includes("registration") || sourceName.endsWith("/2.pdf") || sourceName.endsWith("\\2.pdf");
+        const regAnchor =
+          searchAnchorHits.find((item) => item.label === "МЕСТО ЖИТЕЛЬСТВА") ??
+          searchAnchorHits.find((item) => item.label === "ЗАРЕГИСТРИРОВАН") ??
+          null;
+        const canRunRegistrationAnchorFlow = sourceLooksRegistration || regAnchor !== null;
+        const sweepAudit: Array<Record<string, unknown>> = [];
+        if (canRunRegistrationAnchorFlow && regAnchor !== null) {
+          const baseRegRoi = buildRegistrationRoiFromAnchor(regAnchor.bbox, width, height, roi.page);
+          const yOffsets: number[] = [];
+          for (let offset = -200; offset <= 200; offset += 20) yOffsets.push(offset);
+          yOffsets.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
+          sweepLoop: for (const yOffset of yOffsets) {
+            const sweepRoi = shiftRoiVertical(baseRegRoi, yOffset, height);
+            const sweepCropPath = join(tmp, `registration_sweep_${yOffset}_before.png`);
+            const sweepPrePath = join(tmp, `registration_sweep_${yOffset}_after.png`);
+            await cropToFile(pagePath, sweepRoi, sweepCropPath);
+            await preprocessForOcr(sweepCropPath, sweepPrePath, "text_v2");
+            if (debugDir !== "") {
+              await sharp(sweepCropPath).png().toFile(join(debugDir, `registration_sweep_${yOffset}_before.png`)).catch(() => undefined);
+              await sharp(sweepPrePath).png().toFile(join(debugDir, `registration_sweep_${yOffset}_after.png`)).catch(() => undefined);
+            }
+            for (const psm of [6, 11]) {
+              const raw = await runTesseractPlain(sweepPrePath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, psm);
+              const normalized = normalizeRegistrationAnchorCandidate(raw);
+              const validated = validateRegistrationAnchorCandidate(normalized);
+              const confidence = psm === 6 ? 0.36 : 0.32;
               attempts.push({
                 pass_id: "C",
-                raw_text_preview: `${sweep.sweep} ${normalized}`.slice(0, 120),
+                raw_text_preview: `${yOffset} ${raw}`.slice(0, 120),
                 normalized_preview: normalized.slice(0, 120),
                 source: "zonal_tsv",
                 confidence,
                 psm
               });
-              const cand = makeRankedCandidate({
-                field,
-                pass_id: "C",
-                source: "zonal_tsv",
+              ranked.push(
+                makeRankedCandidate({
+                  field,
+                  pass_id: "C",
+                  source: "zonal_tsv",
+                  psm,
+                  raw,
+                  normalized: validated ?? normalized,
+                  confidence,
+                  anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.94),
+                  markerMatch: validated !== null ? 1 : textMarkerScore(field, normalized),
+                  validatedOverride: validated
+                })
+              );
+              sweepAudit.push({
+                yOffset,
                 psm,
-                raw: normalized,
-                normalized,
-                confidence,
-                anchorAlignmentScore,
-                markerMatch: textMarkerScore(field, normalized)
+                roi: sweepRoi,
+                candidatePreview: normalized.slice(0, 120),
+                validatorPassed: validated !== null,
+                rejectionReason: validated === null ? "REGISTRATION_VALIDATOR_FAILED" : null
               });
-              ranked.push(cand);
-              if (cand.validated !== null) {
+              if (validated !== null) {
                 break sweepLoop;
               }
             }
           }
+          detailedAudit.registration = {
+            strategy: "anchor_below_sweep",
+            status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
+            sourceLooksRegistration,
+            anchor: {
+              label: regAnchor.label,
+              bbox: regAnchor.bbox,
+              confidence: Number(regAnchor.confidence.toFixed(4))
+            },
+            sweeps: sweepAudit
+          };
+        } else {
+          const placeholderSweepRoi = roi;
+          const sweepCropPath = join(tmp, "registration_sweep_0_before.png");
+          const sweepPrePath = join(tmp, "registration_sweep_0_after.png");
+          await cropToFile(pagePath, placeholderSweepRoi, sweepCropPath);
+          await preprocessForOcr(sweepCropPath, sweepPrePath, "text_v2");
+          if (debugDir !== "") {
+            await sharp(sweepCropPath).png().toFile(join(debugDir, "registration_sweep_0_before.png")).catch(() => undefined);
+            await sharp(sweepPrePath).png().toFile(join(debugDir, "registration_sweep_0_after.png")).catch(() => undefined);
+          }
+          detailedAudit.registration = {
+            strategy: "anchor_below_sweep",
+            status: "skipped",
+            reason: regAnchor === null ? "REGISTRATION_ANCHOR_NOT_FOUND" : "SOURCE_NOT_REGISTRATION",
+            sourceLooksRegistration,
+            sweeps: [
+              {
+                yOffset: 0,
+                roi: placeholderSweepRoi,
+                validatorPassed: false,
+                rejectionReason: regAnchor === null ? "REGISTRATION_ANCHOR_NOT_FOUND" : "SOURCE_NOT_REGISTRATION"
+              }
+            ]
+          };
         }
         const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
@@ -2998,6 +3210,7 @@ export class RfInternalPassportExtractor {
 
       if (debugDir) {
         await writeFile(join(debugDir, "extractor_audit.json"), JSON.stringify(extractorAudit, null, 2), "utf8").catch(() => undefined);
+        await writeFile(join(debugDir, "audit.json"), JSON.stringify(detailedAudit, null, 2), "utf8").catch(() => undefined);
       }
 
       const diagnostics = buildDiagnostics(undefined, normalized.preprocessing, fieldDebug);
