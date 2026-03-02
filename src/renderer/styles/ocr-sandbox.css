@@ -91,6 +91,12 @@ h2 {
   padding: 12px;
 }
 
+.fixtures-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .secondary-btn,
 .primary-btn,
 .toggle-btn,

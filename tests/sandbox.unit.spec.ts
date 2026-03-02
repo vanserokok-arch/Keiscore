@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolvePathInsideRoot } from "../src/main/sandbox-fixtures.js";
 import type { SandboxRunOcrResult } from "../src/shared/ipc/sandbox.js";
 import { mapRunResultToUi } from "../src/renderer/pages/ocrSandboxRunResult.js";
 
@@ -23,5 +24,14 @@ describe("sandbox ui run-result mapper", () => {
       details: { source: "passport", reason: "timeout" }
     });
     expect(mapped.rawJson).toContain("OCR subrun failed");
+  });
+});
+
+describe("sandbox fixture path resolver", () => {
+  it("resolves fixture path only inside fixtures root and blocks traversal", () => {
+    const root = "/tmp/keiscore/fixtures";
+    const allowed = resolvePathInsideRoot(root, "case1/pdf/passport.pdf");
+    expect(allowed).toBe("/tmp/keiscore/fixtures/case1/pdf/passport.pdf");
+    expect(() => resolvePathInsideRoot(root, "../outside.pdf")).toThrow("Path escapes allowed root.");
   });
 });

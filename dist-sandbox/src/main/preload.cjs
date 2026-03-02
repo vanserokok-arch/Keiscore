@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("keisSandbox", {
   runOcr(input) {
     return ipcRenderer.invoke("sandbox:runOcr", input);
   },
+  runOcrFixtures(input) {
+    return ipcRenderer.invoke("sandbox:runOcrFixtures", input);
+  },
   openPath(path) {
     return ipcRenderer.invoke("sandbox:openPath", { path });
   }

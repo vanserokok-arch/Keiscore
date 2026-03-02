@@ -15,6 +15,12 @@ export const SandboxRunOcrRequestSchema = z.object({
     pdfPageRangeRegistration: SandboxPageRangeSchema.optional(),
     debugDir: z.string().nullable().optional()
 });
+export const SandboxRunOcrFixturesRequestSchema = z.object({
+    caseId: z.enum(["case1", "case2"]),
+    kind: z.enum(["pdf", "png"]),
+    ocrVariant: z.enum(["v1", "v2"]).optional(),
+    debugDir: z.string().nullable().optional()
+});
 export const SandboxOcrFieldsSchema = z.object({
     fio: z.string().nullable(),
     passport_number: z.string().nullable(),
@@ -45,6 +51,8 @@ export const SandboxFieldDiagSchema = z.object({
 });
 export const SandboxSourceDiagnosticsSchema = z.object({
     sourcePath: z.string(),
+    sourceKind: z.enum(["pdf", "png"]).optional(),
+    convertedPdfPath: z.string().nullable().optional(),
     confidence_score: z.number(),
     summary: SandboxSummarySchema,
     normalization: SandboxNormalizationSummarySchema,

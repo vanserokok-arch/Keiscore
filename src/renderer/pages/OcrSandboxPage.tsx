@@ -13,6 +13,34 @@ type FormState = {
   phone: string;
 };
 
+type FixtureSelection = {
+  caseId: "case1" | "case2";
+  kind: "pdf" | "png";
+};
+
+const FIXTURE_PATHS: Record<FixtureSelection["caseId"], Record<FixtureSelection["kind"], { passport: string; registration: string }>> = {
+  case1: {
+    pdf: {
+      passport: "fixtures/case1/pdf/passport.pdf",
+      registration: "fixtures/case1/pdf/registration.pdf"
+    },
+    png: {
+      passport: "fixtures/case1/png/passport.png",
+      registration: "fixtures/case1/png/registration.png"
+    }
+  },
+  case2: {
+    pdf: {
+      passport: "fixtures/case2/pdf/passport.pdf",
+      registration: "fixtures/case2/pdf/registration.pdf"
+    },
+    png: {
+      passport: "fixtures/case2/png/passport.png",
+      registration: "fixtures/case2/png/registration.png"
+    }
+  }
+};
+
 
 function compactPath(value: string, max = 60): string {
   if (value.length <= max) {
@@ -61,8 +89,10 @@ export function OcrSandboxPage() {
   const [lastRunResult, setLastRunResult] = useState<SandboxRunOcrResult | null>(null);
   const [lastThrownError, setLastThrownError] = useState<unknown | null>(null);
   const [ocrVariant, setOcrVariant] = useState<"v1" | "v2">("v1");
-
-  const runDisabled = passportPath.trim() === "" || registrationPath.trim() === "" || status === "running";
+  const [fixtureSelection, setFixtureSelection] = useState<FixtureSelection | null>(null);
+  const fixturePaths = fixtureSelection ? FIXTURE_PATHS[fixtureSelection.caseId][fixtureSelection.kind] : null;
+  const hasInputPair = fixtureSelection !== null || (passportPath.trim() !== "" && registrationPath.trim() !== "");
+  const runDisabled = !hasInputPair || status === "running";
 
   const runResult = useMemo(() => mapRunResultToUi(lastRunResult, lastThrownError), [lastRunResult, lastThrownError]);
 
@@ -79,6 +109,7 @@ export function OcrSandboxPage() {
         return;
       }
       setPassportPath(result.data.path);
+      setFixtureSelection(null);
       setLastThrownError(null);
     } catch (error) {
       setLastRunResult(null);
@@ -100,6 +131,7 @@ export function OcrSandboxPage() {
         return;
       }
       setRegistrationPath(result.data.path);
+      setFixtureSelection(null);
       setLastThrownError(null);
     } catch (error) {
       setLastRunResult(null);
@@ -117,11 +149,18 @@ export function OcrSandboxPage() {
     setProgress(10);
     try {
       setProgress(30);
-      const result = await window.keisSandbox.runOcr({
-        passportPath,
-        registrationPath,
-        ocrVariant
-      });
+      const result =
+        fixtureSelection === null
+          ? await window.keisSandbox.runOcr({
+              passportPath,
+              registrationPath,
+              ocrVariant
+            })
+          : await window.keisSandbox.runOcrFixtures({
+              caseId: fixtureSelection.caseId,
+              kind: fixtureSelection.kind,
+              ocrVariant
+            });
       setLastRunResult(result);
       setProgress(100);
 
@@ -145,6 +184,16 @@ export function OcrSandboxPage() {
       setLastRunResult(null);
       setLastThrownError(error);
     }
+  }
+
+  function selectFixture(caseId: "case1" | "case2", kind: "pdf" | "png") {
+    setFixtureSelection({ caseId, kind });
+    setPassportPath("");
+    setRegistrationPath("");
+    setLastThrownError(null);
+    setLastRunResult(null);
+    setStatus("ready");
+    setProgress(0);
   }
 
   async function onOpenDebugDir() {
@@ -187,6 +236,29 @@ export function OcrSandboxPage() {
             {registrationPath ? extractFileName(registrationPath) : "Файл не выбран"}
           </p>
         </article>
+        <article className="glass-card">
+          <h2>Fixtures</h2>
+          <div className="fixtures-grid">
+            <button onClick={() => selectFixture("case1", "pdf")} className="secondary-btn" type="button">
+              Case1 PDF
+            </button>
+            <button onClick={() => selectFixture("case1", "png")} className="secondary-btn" type="button">
+              Case1 PNG
+            </button>
+            <button onClick={() => selectFixture("case2", "pdf")} className="secondary-btn" type="button">
+              Case2 PDF
+            </button>
+            <button onClick={() => selectFixture("case2", "png")} className="secondary-btn" type="button">
+              Case2 PNG
+            </button>
+          </div>
+          <p className="path-label" title={fixturePaths?.passport}>
+            Паспорт: {fixturePaths?.passport ?? "не выбрано"}
+          </p>
+          <p className="path-label" title={fixturePaths?.registration}>
+            Регистрация: {fixturePaths?.registration ?? "не выбрано"}
+          </p>
+        </article>
         <label className="field-row">
           <span>Режим OCR</span>
           <em>{ocrVariant.toUpperCase()}</em>
@@ -196,7 +268,7 @@ export function OcrSandboxPage() {
           </select>
         </label>
         <button className="primary-btn" disabled={runDisabled} onClick={onRunOcr} type="button">
-          Распознать данные
+          Распознать
         </button>
         <div className="progress-wrap">
           <div className="progress-track">
@@ -206,7 +278,7 @@ export function OcrSandboxPage() {
             <span>{statusLabel(status)}</span>
             <span>{progress}%</span>
           </div>
-          {runDisabled ? <p className="hint">Выберите оба файла: паспорт и регистрацию.</p> : null}
+          {runDisabled ? <p className="hint">Выберите fixtures или оба файла: паспорт и регистрацию.</p> : null}
         </div>
 
         <section className="run-result">

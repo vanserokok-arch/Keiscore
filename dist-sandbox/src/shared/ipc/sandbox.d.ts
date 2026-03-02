@@ -23,6 +23,21 @@ export declare const SandboxRunOcrRequestSchema: z.ZodObject<{
     }, z.core.$strip>>;
     debugDir: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strip>;
+export declare const SandboxRunOcrFixturesRequestSchema: z.ZodObject<{
+    caseId: z.ZodEnum<{
+        case1: "case1";
+        case2: "case2";
+    }>;
+    kind: z.ZodEnum<{
+        pdf: "pdf";
+        png: "png";
+    }>;
+    ocrVariant: z.ZodOptional<z.ZodEnum<{
+        v1: "v1";
+        v2: "v2";
+    }>>;
+    debugDir: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, z.core.$strip>;
 export declare const SandboxOcrFieldsSchema: z.ZodObject<{
     fio: z.ZodNullable<z.ZodString>;
     passport_number: z.ZodNullable<z.ZodString>;
@@ -53,6 +68,11 @@ export declare const SandboxFieldDiagSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const SandboxSourceDiagnosticsSchema: z.ZodObject<{
     sourcePath: z.ZodString;
+    sourceKind: z.ZodOptional<z.ZodEnum<{
+        pdf: "pdf";
+        png: "png";
+    }>>;
+    convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     confidence_score: z.ZodNumber;
     summary: z.ZodObject<{
         anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -83,6 +103,11 @@ export declare const SandboxMergedDiagnosticsSchema: z.ZodObject<{
 export declare const SandboxDiagnosticsSchema: z.ZodObject<{
     passport: z.ZodOptional<z.ZodObject<{
         sourcePath: z.ZodString;
+        sourceKind: z.ZodOptional<z.ZodEnum<{
+            pdf: "pdf";
+            png: "png";
+        }>>;
+        convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         confidence_score: z.ZodNumber;
         summary: z.ZodObject<{
             anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -108,6 +133,11 @@ export declare const SandboxDiagnosticsSchema: z.ZodObject<{
     }, z.core.$strip>>;
     registration: z.ZodOptional<z.ZodObject<{
         sourcePath: z.ZodString;
+        sourceKind: z.ZodOptional<z.ZodEnum<{
+            pdf: "pdf";
+            png: "png";
+        }>>;
+        convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         confidence_score: z.ZodNumber;
         summary: z.ZodObject<{
             anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -150,6 +180,11 @@ export declare const SandboxRunOcrResponseSchema: z.ZodObject<{
     diagnostics: z.ZodObject<{
         passport: z.ZodOptional<z.ZodObject<{
             sourcePath: z.ZodString;
+            sourceKind: z.ZodOptional<z.ZodEnum<{
+                pdf: "pdf";
+                png: "png";
+            }>>;
+            convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             confidence_score: z.ZodNumber;
             summary: z.ZodObject<{
                 anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -175,6 +210,11 @@ export declare const SandboxRunOcrResponseSchema: z.ZodObject<{
         }, z.core.$strip>>;
         registration: z.ZodOptional<z.ZodObject<{
             sourcePath: z.ZodString;
+            sourceKind: z.ZodOptional<z.ZodEnum<{
+                pdf: "pdf";
+                png: "png";
+            }>>;
+            convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
             confidence_score: z.ZodNumber;
             summary: z.ZodObject<{
                 anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -353,6 +393,11 @@ export declare const SandboxRunOcrResultSchema: z.ZodUnion<readonly [z.ZodObject
         diagnostics: z.ZodObject<{
             passport: z.ZodOptional<z.ZodObject<{
                 sourcePath: z.ZodString;
+                sourceKind: z.ZodOptional<z.ZodEnum<{
+                    pdf: "pdf";
+                    png: "png";
+                }>>;
+                convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
                 confidence_score: z.ZodNumber;
                 summary: z.ZodObject<{
                     anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -378,6 +423,11 @@ export declare const SandboxRunOcrResultSchema: z.ZodUnion<readonly [z.ZodObject
             }, z.core.$strip>>;
             registration: z.ZodOptional<z.ZodObject<{
                 sourcePath: z.ZodString;
+                sourceKind: z.ZodOptional<z.ZodEnum<{
+                    pdf: "pdf";
+                    png: "png";
+                }>>;
+                convertedPdfPath: z.ZodOptional<z.ZodNullable<z.ZodString>>;
                 confidence_score: z.ZodNumber;
                 summary: z.ZodObject<{
                     anchorsFoundCount: z.ZodNullable<z.ZodNumber>;
@@ -551,6 +601,7 @@ export declare const SandboxOpenPathResultSchema: z.ZodUnion<readonly [z.ZodObje
 }, z.core.$strip>]>;
 export type SandboxPickPdfResponse = z.infer<typeof SandboxPickPdfResponseSchema>;
 export type SandboxRunOcrRequest = z.infer<typeof SandboxRunOcrRequestSchema>;
+export type SandboxRunOcrFixturesRequest = z.infer<typeof SandboxRunOcrFixturesRequestSchema>;
 export type SandboxRunOcrResponse = z.infer<typeof SandboxRunOcrResponseSchema>;
 export type SandboxOpenPathRequest = z.infer<typeof SandboxOpenPathRequestSchema>;
 export type SandboxError = z.infer<typeof SandboxErrorSchema>;

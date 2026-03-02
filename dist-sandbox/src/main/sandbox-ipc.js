@@ -2,9 +2,11 @@ import { lstat, mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { dialog, ipcMain, shell } from "electron";
+import sharp from "sharp";
 import { extractRfInternalPassport } from "../../index.js";
-import { SandboxOpenPathRequestSchema, SandboxOpenPathResultSchema, SandboxPickPdfResultSchema, SandboxPickPdfResponseSchema, SandboxRunOcrResultSchema, SandboxRunOcrRequestSchema, SandboxRunOcrResponseSchema } from "../shared/ipc/sandbox.js";
-const ALLOWED_EXTENSIONS = new Set([".pdf"]);
+import { resolveFixturePairPaths, resolveRepoRoot, validateSafeInputFile } from "./sandbox-fixtures.js";
+import { SandboxOpenPathRequestSchema, SandboxOpenPathResultSchema, SandboxPickPdfResultSchema, SandboxPickPdfResponseSchema, SandboxRunOcrFixturesRequestSchema, SandboxRunOcrResultSchema, SandboxRunOcrRequestSchema, SandboxRunOcrResponseSchema } from "../shared/ipc/sandbox.js";
+const ALLOWED_EXTENSIONS = new Set([".pdf", ".png"]);
 const ALLOWED_ERROR_CODES = new Set([
     "UNSUPPORTED_FORMAT",
     "DOCUMENT_NOT_DETECTED",
@@ -16,9 +18,9 @@ const ALLOWED_ERROR_CODES = new Set([
     "SECURITY_VIOLATION",
     "INTERNAL_ERROR"
 ]);
-const MAX_INPUT_BYTES = 50 * 1024 * 1024;
 const OCR_TIMEOUT_MS = 30_000;
 const FIELD_ORDER = ["fio", "passport_number", "issued_by", "dept_code", "registration"];
+const REPO_ROOT = resolveRepoRoot(import.meta.url);
 function toCoreError(error) {
     if (typeof error === "object" &&
         error !== null &&
@@ -53,25 +55,13 @@ async function validateInputPath(filePath) {
     if (!isAbsolute(normalized)) {
         throw buildSecurityError("Path must be absolute.", { path: filePath });
     }
-    const ext = extname(normalized).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
-        throw buildSecurityError("Unsupported file extension.", { path: normalized, ext });
+    try {
+        return await validateSafeInputFile(normalized, ALLOWED_EXTENSIONS);
     }
-    const fileLinkStats = await lstat(normalized).catch(() => null);
-    if (fileLinkStats === null) {
-        throw buildSecurityError("File does not exist.", { path: normalized });
+    catch (error) {
+        const ext = extname(normalized).toLowerCase();
+        throw buildSecurityError(error instanceof Error ? error.message : "Invalid input file.", { path: normalized, ext });
     }
-    if (fileLinkStats.isSymbolicLink()) {
-        throw buildSecurityError("Symbolic links are not allowed.", { path: normalized });
-    }
-    const fileStats = await stat(normalized).catch(() => null);
-    if (fileStats === null || !fileStats.isFile()) {
-        throw buildSecurityError("File does not exist.", { path: normalized });
-    }
-    if (fileStats.size > MAX_INPUT_BYTES) {
-        throw buildSecurityError("File exceeds 50MB limit.", { path: normalized, size: fileStats.size });
-    }
-    return normalized;
 }
 async function resolveDebugRootDir(requested) {
     const direct = requested === undefined ? null : requested;
@@ -186,6 +176,118 @@ async function runSubOcr(source, path, debugDir, ocrVariant, pdfPageRange) {
         return { ok: false, result: emptyResultWithError(structured), error: structured, debugDir };
     }
 }
+async function toPdfRuntimeInput(inputPath) {
+    const ext = extname(inputPath).toLowerCase();
+    if (ext === ".pdf") {
+        return {
+            sourcePathForDiagnostics: inputPath,
+            sourceKind: "pdf",
+            effectivePdfPath: inputPath,
+            convertedPdfPath: null
+        };
+    }
+    if (ext !== ".png") {
+        throw buildSecurityError("Unsupported file extension.", { path: inputPath, ext });
+    }
+    const tempDir = await mkdtemp(join(tmpdir(), "keiscore-fixtures-"));
+    const tempPdfPath = join(tempDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}.pdf`);
+    const pngToPdfPipeline = sharp(inputPath);
+    await pngToPdfPipeline.pdf().toFile(tempPdfPath);
+    return {
+        sourcePathForDiagnostics: inputPath,
+        sourceKind: "png",
+        effectivePdfPath: tempPdfPath,
+        convertedPdfPath: tempPdfPath
+    };
+}
+async function runOcrPair(label, input) {
+    const debugRootDir = await resolveDebugRootDir(input.debugDir);
+    const passportDebugDir = join(debugRootDir, "passport");
+    const registrationDebugDir = join(debugRootDir, "registration");
+    await mkdir(passportDebugDir, { recursive: true });
+    await mkdir(registrationDebugDir, { recursive: true });
+    console.info(`[${label}] start`, {
+        passportPath: input.passport.sourcePathForDiagnostics,
+        registrationPath: input.registration.sourcePathForDiagnostics,
+        debugDir: debugRootDir
+    });
+    const passportSubRun = await runSubOcr("passport", input.passport.effectivePdfPath, passportDebugDir, input.ocrVariant, input.pdfPageRangePassport);
+    const registrationSubRun = await runSubOcr("registration", input.registration.effectivePdfPath, registrationDebugDir, input.ocrVariant, input.pdfPageRangeRegistration);
+    const passportRun = { result: passportSubRun.result, debugDir: passportSubRun.debugDir };
+    const registrationRun = { result: registrationSubRun.result, debugDir: registrationSubRun.debugDir };
+    const mergedReports = FIELD_ORDER.flatMap((field) => {
+        if (field === "registration") {
+            return registrationRun.result.field_reports.filter((report) => report.field === "registration");
+        }
+        return passportRun.result.field_reports.filter((report) => report.field === field);
+    });
+    const mergedErrors = [
+        ...passportRun.result.errors.map((err) => ({ ...err, details: { source: "passport", ...(err.details ?? {}) } })),
+        ...registrationRun.result.errors.map((err) => ({
+            ...err,
+            details: { source: "registration", ...(err.details ?? {}) }
+        }))
+    ];
+    const hasPassport = passportRun.result.field_reports.length > 0 || passportRun.result.errors.length === 0;
+    const hasRegistration = registrationRun.result.field_reports.length > 0 || registrationRun.result.errors.length === 0;
+    const confidenceScore = hasPassport && hasRegistration
+        ? Math.min(passportRun.result.confidence_score, registrationRun.result.confidence_score)
+        : hasPassport
+            ? passportRun.result.confidence_score
+            : registrationRun.result.confidence_score;
+    const passportAnchorSummary = await readAnchorAudit(passportRun.debugDir);
+    const registrationAnchorSummary = await readAnchorAudit(registrationRun.debugDir);
+    const response = {
+        fields: {
+            fio: passportRun.result.fio,
+            passport_number: passportRun.result.passport_number,
+            issued_by: passportRun.result.issued_by,
+            dept_code: passportRun.result.dept_code,
+            registration: registrationRun.result.registration,
+            phone: null
+        },
+        debugDir: debugRootDir,
+        confidence_score: Number.isFinite(confidenceScore) ? confidenceScore : 0,
+        diagnostics: {
+            passport: {
+                sourcePath: input.passport.sourcePathForDiagnostics,
+                sourceKind: input.passport.sourceKind,
+                convertedPdfPath: input.passport.convertedPdfPath,
+                confidence_score: passportRun.result.confidence_score,
+                summary: passportAnchorSummary,
+                normalization: getNormalizationSummary(passportRun.result),
+                fields: passportRun.result.field_reports.map(compactReport),
+                debugDir: passportRun.debugDir
+            },
+            registration: {
+                sourcePath: input.registration.sourcePathForDiagnostics,
+                sourceKind: input.registration.sourceKind,
+                convertedPdfPath: input.registration.convertedPdfPath,
+                confidence_score: registrationRun.result.confidence_score,
+                summary: registrationAnchorSummary,
+                normalization: getNormalizationSummary(registrationRun.result),
+                fields: registrationRun.result.field_reports.map(compactReport),
+                debugDir: registrationRun.debugDir
+            },
+            merged: {
+                strategy: "min",
+                debugRootDir
+            }
+        },
+        field_reports: mergedReports,
+        ...(mergedErrors.length > 0 ? { errors: mergedErrors } : {})
+    };
+    const parsed = SandboxRunOcrResponseSchema.parse(response);
+    const finalStatus = passportSubRun.ok && registrationSubRun.ok ? "ok" : "partial";
+    console.info(`[${label}] end`, {
+        status: finalStatus,
+        debugDir: debugRootDir,
+        passportOk: passportSubRun.ok,
+        registrationOk: registrationSubRun.ok,
+        errors: parsed.errors?.length ?? 0
+    });
+    return SandboxRunOcrResultSchema.parse({ ok: true, data: parsed });
+}
 export function registerSandboxIpcHandlers() {
     ipcMain.handle("sandbox:pickPassportPdf", async () => {
         try {
@@ -227,92 +329,45 @@ export function registerSandboxIpcHandlers() {
             const ocrVariant = request.ocrVariant ?? "v1";
             const passportPath = await validateInputPath(request.passportPath);
             const registrationPath = await validateInputPath(request.registrationPath);
-            const debugRootDir = await resolveDebugRootDir(request.debugDir);
-            const passportDebugDir = join(debugRootDir, "passport");
-            const registrationDebugDir = join(debugRootDir, "registration");
-            await mkdir(passportDebugDir, { recursive: true });
-            await mkdir(registrationDebugDir, { recursive: true });
-            console.info("[sandbox:runOcr] start", {
-                passportPath,
-                registrationPath,
-                debugDir: debugRootDir
+            return await runOcrPair("sandbox:runOcr", {
+                passport: await toPdfRuntimeInput(passportPath),
+                registration: await toPdfRuntimeInput(registrationPath),
+                ocrVariant,
+                debugDir: request.debugDir,
+                pdfPageRangePassport: request.pdfPageRangePassport,
+                pdfPageRangeRegistration: request.pdfPageRangeRegistration
             });
-            const passportSubRun = await runSubOcr("passport", passportPath, passportDebugDir, ocrVariant, request.pdfPageRangePassport);
-            const registrationSubRun = await runSubOcr("registration", registrationPath, registrationDebugDir, ocrVariant, request.pdfPageRangeRegistration);
-            const passportRun = { result: passportSubRun.result, debugDir: passportSubRun.debugDir };
-            const registrationRun = { result: registrationSubRun.result, debugDir: registrationSubRun.debugDir };
-            const mergedReports = FIELD_ORDER.flatMap((field) => {
-                if (field === "registration") {
-                    return registrationRun.result.field_reports.filter((report) => report.field === "registration");
-                }
-                return passportRun.result.field_reports.filter((report) => report.field === field);
-            });
-            const mergedErrors = [
-                ...passportRun.result.errors.map((err) => ({ ...err, details: { source: "passport", ...(err.details ?? {}) } })),
-                ...registrationRun.result.errors.map((err) => ({
-                    ...err,
-                    details: { source: "registration", ...(err.details ?? {}) }
-                }))
-            ];
-            const hasPassport = passportRun.result.field_reports.length > 0 || passportRun.result.errors.length === 0;
-            const hasRegistration = registrationRun.result.field_reports.length > 0 || registrationRun.result.errors.length === 0;
-            const confidenceScore = hasPassport && hasRegistration
-                ? Math.min(passportRun.result.confidence_score, registrationRun.result.confidence_score)
-                : hasPassport
-                    ? passportRun.result.confidence_score
-                    : registrationRun.result.confidence_score;
-            const passportAnchorSummary = await readAnchorAudit(passportRun.debugDir);
-            const registrationAnchorSummary = await readAnchorAudit(registrationRun.debugDir);
-            const response = {
-                fields: {
-                    fio: passportRun.result.fio,
-                    passport_number: passportRun.result.passport_number,
-                    issued_by: passportRun.result.issued_by,
-                    dept_code: passportRun.result.dept_code,
-                    registration: registrationRun.result.registration,
-                    phone: null
-                },
-                debugDir: debugRootDir,
-                confidence_score: Number.isFinite(confidenceScore) ? confidenceScore : 0,
-                diagnostics: {
-                    passport: {
-                        sourcePath: passportPath,
-                        confidence_score: passportRun.result.confidence_score,
-                        summary: passportAnchorSummary,
-                        normalization: getNormalizationSummary(passportRun.result),
-                        fields: passportRun.result.field_reports.map(compactReport),
-                        debugDir: passportRun.debugDir
-                    },
-                    registration: {
-                        sourcePath: registrationPath,
-                        confidence_score: registrationRun.result.confidence_score,
-                        summary: registrationAnchorSummary,
-                        normalization: getNormalizationSummary(registrationRun.result),
-                        fields: registrationRun.result.field_reports.map(compactReport),
-                        debugDir: registrationRun.debugDir
-                    },
-                    merged: {
-                        strategy: "min",
-                        debugRootDir
-                    }
-                },
-                field_reports: mergedReports,
-                ...(mergedErrors.length > 0 ? { errors: mergedErrors } : {})
-            };
-            const parsed = SandboxRunOcrResponseSchema.parse(response);
-            const finalStatus = passportSubRun.ok && registrationSubRun.ok ? "ok" : "partial";
-            console.info("[sandbox:runOcr] end", {
-                status: finalStatus,
-                debugDir: debugRootDir,
-                passportOk: passportSubRun.ok,
-                registrationOk: registrationSubRun.ok,
-                errors: parsed.errors?.length ?? 0
-            });
-            return SandboxRunOcrResultSchema.parse({ ok: true, data: parsed });
         }
         catch (error) {
             const failure = toStructuredFailure(error);
             console.error("[sandbox:runOcr] failed", failure.error);
+            return SandboxRunOcrResultSchema.parse(failure);
+        }
+    });
+    ipcMain.handle("sandbox:runOcrFixtures", async (_event, payload) => {
+        try {
+            const request = SandboxRunOcrFixturesRequestSchema.parse(payload);
+            const ocrVariant = request.ocrVariant ?? "v1";
+            let resolvedFixtures;
+            try {
+                resolvedFixtures = await resolveFixturePairPaths(REPO_ROOT, request.caseId, request.kind);
+            }
+            catch (error) {
+                throw buildSecurityError(error instanceof Error ? error.message : "Fixture validation failed.", {
+                    caseId: request.caseId,
+                    kind: request.kind
+                });
+            }
+            return await runOcrPair("sandbox:runOcrFixtures", {
+                passport: await toPdfRuntimeInput(resolvedFixtures.passportPath),
+                registration: await toPdfRuntimeInput(resolvedFixtures.registrationPath),
+                ocrVariant,
+                debugDir: request.debugDir
+            });
+        }
+        catch (error) {
+            const failure = toStructuredFailure(error);
+            console.error("[sandbox:runOcrFixtures] failed", failure.error);
             return SandboxRunOcrResultSchema.parse(failure);
         }
     });
