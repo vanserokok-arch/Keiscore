@@ -1,10 +1,21 @@
-import { access, mkdir, readFile, stat } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { lstat, mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { dialog, ipcMain, shell } from "electron";
 import { extractRfInternalPassport } from "../../index.js";
-import { SandboxOpenDebugDirRequestSchema, SandboxOpenDebugDirResponseSchema, SandboxPickFileRequestSchema, SandboxPickFileResponseSchema, SandboxRunOcrRequestSchema, SandboxRunOcrResponseSchema } from "../shared/ipc/sandbox.js";
-const ALLOWED_EXTENSIONS = new Set([".pdf", ".png", ".jpg", ".jpeg"]);
+import { SandboxOpenPathRequestSchema, SandboxOpenPathResultSchema, SandboxPickPdfResultSchema, SandboxPickPdfResponseSchema, SandboxRunOcrResultSchema, SandboxRunOcrRequestSchema, SandboxRunOcrResponseSchema } from "../shared/ipc/sandbox.js";
+const ALLOWED_EXTENSIONS = new Set([".pdf"]);
+const ALLOWED_ERROR_CODES = new Set([
+    "UNSUPPORTED_FORMAT",
+    "DOCUMENT_NOT_DETECTED",
+    "PAGE_CLASSIFICATION_FAILED",
+    "ENGINE_UNAVAILABLE",
+    "FIELD_NOT_CONFIRMED",
+    "QUALITY_WARNING",
+    "REQUIRE_MANUAL_REVIEW",
+    "SECURITY_VIOLATION",
+    "INTERNAL_ERROR"
+]);
 const MAX_INPUT_BYTES = 50 * 1024 * 1024;
 const OCR_TIMEOUT_MS = 30_000;
 const FIELD_ORDER = ["fio", "passport_number", "issued_by", "dept_code", "registration"];
@@ -15,7 +26,10 @@ function toCoreError(error) {
         "message" in error &&
         typeof error.code === "string" &&
         typeof error.message === "string") {
-        return error;
+        const candidate = error;
+        if (ALLOWED_ERROR_CODES.has(candidate.code)) {
+            return candidate;
+        }
     }
     if (typeof error === "object" &&
         error !== null &&
@@ -43,6 +57,13 @@ async function validateInputPath(filePath) {
     if (!ALLOWED_EXTENSIONS.has(ext)) {
         throw buildSecurityError("Unsupported file extension.", { path: normalized, ext });
     }
+    const fileLinkStats = await lstat(normalized).catch(() => null);
+    if (fileLinkStats === null) {
+        throw buildSecurityError("File does not exist.", { path: normalized });
+    }
+    if (fileLinkStats.isSymbolicLink()) {
+        throw buildSecurityError("Symbolic links are not allowed.", { path: normalized });
+    }
     const fileStats = await stat(normalized).catch(() => null);
     if (fileStats === null || !fileStats.isFile()) {
         throw buildSecurityError("File does not exist.", { path: normalized });
@@ -55,16 +76,16 @@ async function validateInputPath(filePath) {
 async function resolveDebugRootDir(requested) {
     const direct = requested === undefined ? null : requested;
     const envValue = direct === null ? process.env.KEISCORE_DEBUG_ROI_DIR ?? null : direct;
-    if (envValue === null) {
-        return null;
-    }
-    const trimmed = String(envValue).trim();
+    const trimmed = envValue === null ? "" : String(envValue).trim();
     if (trimmed === "") {
-        return null;
+        return mkdtemp(join(tmpdir(), "keiscore-sandbox-"));
     }
     const resolvedPath = resolve(trimmed);
     await mkdir(resolvedPath, { recursive: true });
     return resolvedPath;
+}
+function toStructuredFailure(error) {
+    return { ok: false, error: toCoreError(error) };
 }
 function compactReport(report) {
     const matchedAttempt = (report.attempts ?? []).find((attempt) => attempt.pass_id === report.pass_id);
@@ -111,7 +132,7 @@ function getNormalizationSummary(result) {
         retryCount: typeof norm?.retryCount === "number" ? norm.retryCount : null
     };
 }
-async function runOcrForSource(path, debugDir) {
+async function runOcrForSource(path, debugDir, pdfPageRange) {
     const previousDebugDir = process.env.KEISCORE_DEBUG_ROI_DIR;
     try {
         if (debugDir === null) {
@@ -122,7 +143,8 @@ async function runOcrForSource(path, debugDir) {
         }
         const result = await extractRfInternalPassport({ kind: "path", path }, {
             tesseractLang: "rus",
-            ocrTimeoutMs: OCR_TIMEOUT_MS
+            ocrTimeoutMs: OCR_TIMEOUT_MS,
+            ...(pdfPageRange === undefined ? {} : { pdfPageRange })
         });
         return { result, debugDir };
     }
@@ -152,22 +174,51 @@ function emptyResultWithError(error) {
         errors: [error]
     };
 }
+async function runSubOcr(source, path, debugDir, pdfPageRange) {
+    try {
+        const run = await runOcrForSource(path, debugDir, pdfPageRange);
+        return { ok: true, result: run.result, debugDir: run.debugDir ?? debugDir };
+    }
+    catch (error) {
+        const structured = toCoreError(error);
+        console.error("[sandbox:runOcr] subrun failed", { source, error: structured });
+        return { ok: false, result: emptyResultWithError(structured), error: structured, debugDir };
+    }
+}
 export function registerSandboxIpcHandlers() {
-    ipcMain.handle("sandbox:pickFile", async (_event, payload) => {
-        const request = SandboxPickFileRequestSchema.parse(payload);
-        const filters = request.kind === "passport"
-            ? [{ name: "Passport files", extensions: ["pdf", "png", "jpg", "jpeg"] }]
-            : [{ name: "Registration files", extensions: ["pdf", "png", "jpg", "jpeg"] }];
-        const pickResult = await dialog.showOpenDialog({
-            title: request.kind === "passport" ? "Выберите паспорт (2–3 стр.)" : "Выберите страницу регистрации",
-            properties: ["openFile"],
-            filters
-        });
-        if (pickResult.canceled || pickResult.filePaths.length === 0) {
-            return SandboxPickFileResponseSchema.parse({ canceled: true });
+    ipcMain.handle("sandbox:pickPassportPdf", async () => {
+        try {
+            const pickResult = await dialog.showOpenDialog({
+                title: "Выберите паспорт (2–3 стр.)",
+                properties: ["openFile"],
+                filters: [{ name: "PDF", extensions: ["pdf"] }]
+            });
+            if (pickResult.canceled || pickResult.filePaths.length === 0) {
+                return SandboxPickPdfResultSchema.parse({ ok: true, data: null });
+            }
+            const validated = await validateInputPath(pickResult.filePaths[0] ?? "");
+            return SandboxPickPdfResultSchema.parse({ ok: true, data: SandboxPickPdfResponseSchema.parse({ path: validated }) });
         }
-        const validated = await validateInputPath(pickResult.filePaths[0] ?? "");
-        return SandboxPickFileResponseSchema.parse({ canceled: false, path: validated });
+        catch (error) {
+            return SandboxPickPdfResultSchema.parse(toStructuredFailure(error));
+        }
+    });
+    ipcMain.handle("sandbox:pickRegistrationPdf", async () => {
+        try {
+            const pickResult = await dialog.showOpenDialog({
+                title: "Выберите регистрацию",
+                properties: ["openFile"],
+                filters: [{ name: "PDF", extensions: ["pdf"] }]
+            });
+            if (pickResult.canceled || pickResult.filePaths.length === 0) {
+                return SandboxPickPdfResultSchema.parse({ ok: true, data: null });
+            }
+            const validated = await validateInputPath(pickResult.filePaths[0] ?? "");
+            return SandboxPickPdfResultSchema.parse({ ok: true, data: SandboxPickPdfResponseSchema.parse({ path: validated }) });
+        }
+        catch (error) {
+            return SandboxPickPdfResultSchema.parse(toStructuredFailure(error));
+        }
     });
     ipcMain.handle("sandbox:runOcr", async (_event, payload) => {
         try {
@@ -175,30 +226,19 @@ export function registerSandboxIpcHandlers() {
             const passportPath = await validateInputPath(request.passportPath);
             const registrationPath = await validateInputPath(request.registrationPath);
             const debugRootDir = await resolveDebugRootDir(request.debugDir);
-            const passportDebugDir = debugRootDir === null ? null : join(debugRootDir, "passport");
-            const registrationDebugDir = debugRootDir === null ? null : join(debugRootDir, "registration");
-            if (passportDebugDir !== null) {
-                await mkdir(passportDebugDir, { recursive: true });
-            }
-            if (registrationDebugDir !== null) {
-                await mkdir(registrationDebugDir, { recursive: true });
-            }
-            let passportRun;
-            let registrationRun;
-            try {
-                passportRun = await runOcrForSource(passportPath, passportDebugDir);
-            }
-            catch (error) {
-                const core = toCoreError(error);
-                passportRun = { result: emptyResultWithError(core), debugDir: passportDebugDir };
-            }
-            try {
-                registrationRun = await runOcrForSource(registrationPath, registrationDebugDir);
-            }
-            catch (error) {
-                const core = toCoreError(error);
-                registrationRun = { result: emptyResultWithError(core), debugDir: registrationDebugDir };
-            }
+            const passportDebugDir = join(debugRootDir, "passport");
+            const registrationDebugDir = join(debugRootDir, "registration");
+            await mkdir(passportDebugDir, { recursive: true });
+            await mkdir(registrationDebugDir, { recursive: true });
+            console.info("[sandbox:runOcr] start", {
+                passportPath,
+                registrationPath,
+                debugDir: debugRootDir
+            });
+            const passportSubRun = await runSubOcr("passport", passportPath, passportDebugDir, request.pdfPageRangePassport);
+            const registrationSubRun = await runSubOcr("registration", registrationPath, registrationDebugDir, request.pdfPageRangeRegistration);
+            const passportRun = { result: passportSubRun.result, debugDir: passportSubRun.debugDir };
+            const registrationRun = { result: registrationSubRun.result, debugDir: registrationSubRun.debugDir };
             const mergedReports = FIELD_ORDER.flatMap((field) => {
                 if (field === "registration") {
                     return registrationRun.result.field_reports.filter((report) => report.field === "registration");
@@ -230,6 +270,7 @@ export function registerSandboxIpcHandlers() {
                     registration: registrationRun.result.registration,
                     phone: null
                 },
+                debugDir: debugRootDir,
                 confidence_score: Number.isFinite(confidenceScore) ? confidenceScore : 0,
                 diagnostics: {
                     passport: {
@@ -256,51 +297,52 @@ export function registerSandboxIpcHandlers() {
                 field_reports: mergedReports,
                 ...(mergedErrors.length > 0 ? { errors: mergedErrors } : {})
             };
-            return SandboxRunOcrResponseSchema.parse(response);
+            const parsed = SandboxRunOcrResponseSchema.parse(response);
+            const finalStatus = passportSubRun.ok && registrationSubRun.ok ? "ok" : "partial";
+            console.info("[sandbox:runOcr] end", {
+                status: finalStatus,
+                debugDir: debugRootDir,
+                passportOk: passportSubRun.ok,
+                registrationOk: registrationSubRun.ok,
+                errors: parsed.errors?.length ?? 0
+            });
+            return SandboxRunOcrResultSchema.parse({ ok: true, data: parsed });
         }
         catch (error) {
-            const passthrough = toCoreError(error);
-            const fallback = {
-                fields: {
-                    fio: null,
-                    passport_number: null,
-                    issued_by: null,
-                    dept_code: null,
-                    registration: null,
-                    phone: null
-                },
-                confidence_score: 0,
-                diagnostics: {
-                    merged: {
-                        strategy: "min",
-                        debugRootDir: null
-                    }
-                },
-                field_reports: [],
-                errors: [passthrough]
-            };
-            return SandboxRunOcrResponseSchema.parse(fallback);
+            const failure = toStructuredFailure(error);
+            console.error("[sandbox:runOcr] failed", failure.error);
+            return SandboxRunOcrResultSchema.parse(failure);
         }
     });
-    ipcMain.handle("sandbox:openDebugDir", async (_event, payload) => {
+    ipcMain.handle("sandbox:openPath", async (_event, payload) => {
         try {
-            const request = SandboxOpenDebugDirRequestSchema.parse(payload);
-            const fullPath = resolve(request.dirPath);
+            const request = SandboxOpenPathRequestSchema.parse(payload);
+            const fullPath = resolve(request.path);
             if (!isAbsolute(fullPath)) {
-                throw buildSecurityError("Debug directory path must be absolute.");
+                throw buildSecurityError("Path must be absolute.");
+            }
+            const linkStats = await lstat(fullPath).catch(() => null);
+            if (linkStats === null) {
+                throw buildSecurityError("Path does not exist.", { path: fullPath });
+            }
+            if (linkStats.isSymbolicLink()) {
+                throw buildSecurityError("Symbolic links are not allowed.", { path: fullPath });
             }
             const stats = await stat(fullPath).catch(() => null);
-            if (stats === null || !stats.isDirectory()) {
-                throw buildSecurityError("Debug directory does not exist.", { path: fullPath });
+            if (stats === null || (!stats.isDirectory() && !stats.isFile())) {
+                throw buildSecurityError("Path is not a regular file or directory.", { path: fullPath });
             }
-            await access(fullPath, fsConstants.R_OK);
             const shellResult = await shell.openPath(fullPath);
-            const response = { ok: shellResult === "", message: shellResult === "" ? null : shellResult };
-            return SandboxOpenDebugDirResponseSchema.parse(response);
+            if (shellResult === "") {
+                return SandboxOpenPathResultSchema.parse({ ok: true, data: { opened: true } });
+            }
+            return SandboxOpenPathResultSchema.parse({
+                ok: false,
+                error: { code: "INTERNAL_ERROR", message: shellResult, details: { path: fullPath } }
+            });
         }
         catch (error) {
-            const core = toCoreError(error);
-            return SandboxOpenDebugDirResponseSchema.parse({ ok: false, message: `${core.code}: ${core.message}` });
+            return SandboxOpenPathResultSchema.parse(toStructuredFailure(error));
         }
     });
 }

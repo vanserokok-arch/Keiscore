@@ -1,20 +1,20 @@
 import { z } from "zod";
 import { CoreErrorSchema, FieldReportSchema } from "../../../types.js";
 
-export const SandboxFileKindSchema = z.enum(["passport", "registration"]);
-
-export const SandboxPickFileRequestSchema = z.object({
-  kind: SandboxFileKindSchema
+export const SandboxPickPdfResponseSchema = z.object({
+  path: z.string()
 });
 
-export const SandboxPickFileResponseSchema = z.object({
-  canceled: z.boolean(),
-  path: z.string().optional()
+export const SandboxPageRangeSchema = z.object({
+  from: z.number().int().positive(),
+  to: z.number().int().positive()
 });
 
 export const SandboxRunOcrRequestSchema = z.object({
   passportPath: z.string().min(1),
   registrationPath: z.string().min(1),
+  pdfPageRangePassport: SandboxPageRangeSchema.optional(),
+  pdfPageRangeRegistration: SandboxPageRangeSchema.optional(),
   debugDir: z.string().nullable().optional()
 });
 
@@ -73,23 +73,61 @@ export const SandboxDiagnosticsSchema = z.object({
 export const SandboxRunOcrResponseSchema = z.object({
   fields: SandboxOcrFieldsSchema,
   confidence_score: z.number().min(0).max(1),
+  debugDir: z.string(),
   diagnostics: SandboxDiagnosticsSchema,
   field_reports: z.array(FieldReportSchema),
   errors: z.array(CoreErrorSchema).optional()
 });
 
-export const SandboxOpenDebugDirRequestSchema = z.object({
-  dirPath: z.string().min(1)
+export const SandboxErrorSchema = CoreErrorSchema;
+
+export const SandboxPickPdfResultSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    data: SandboxPickPdfResponseSchema.nullable()
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: SandboxErrorSchema
+  })
+]);
+
+export const SandboxRunOcrResultSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    data: SandboxRunOcrResponseSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: SandboxErrorSchema
+  })
+]);
+
+export const SandboxOpenPathRequestSchema = z.object({
+  path: z.string().min(1)
 });
 
-export const SandboxOpenDebugDirResponseSchema = z.object({
-  ok: z.boolean(),
-  message: z.string().nullable().optional()
+export const SandboxOpenPathDataSchema = z.object({
+  opened: z.literal(true)
 });
 
-export type SandboxPickFileRequest = z.infer<typeof SandboxPickFileRequestSchema>;
-export type SandboxPickFileResponse = z.infer<typeof SandboxPickFileResponseSchema>;
+export const SandboxOpenPathResultSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    data: SandboxOpenPathDataSchema
+  }),
+  z.object({
+    ok: z.literal(false),
+    error: SandboxErrorSchema
+  })
+]);
+
+export type SandboxPickPdfResponse = z.infer<typeof SandboxPickPdfResponseSchema>;
 export type SandboxRunOcrRequest = z.infer<typeof SandboxRunOcrRequestSchema>;
 export type SandboxRunOcrResponse = z.infer<typeof SandboxRunOcrResponseSchema>;
-export type SandboxOpenDebugDirRequest = z.infer<typeof SandboxOpenDebugDirRequestSchema>;
-export type SandboxOpenDebugDirResponse = z.infer<typeof SandboxOpenDebugDirResponseSchema>;
+export type SandboxOpenPathRequest = z.infer<typeof SandboxOpenPathRequestSchema>;
+export type SandboxError = z.infer<typeof SandboxErrorSchema>;
+export type SandboxPickPdfResult = z.infer<typeof SandboxPickPdfResultSchema>;
+export type SandboxRunOcrResult = z.infer<typeof SandboxRunOcrResultSchema>;
+export type SandboxOpenPathData = z.infer<typeof SandboxOpenPathDataSchema>;
+export type SandboxOpenPathResult = z.infer<typeof SandboxOpenPathResultSchema>;

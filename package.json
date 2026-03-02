@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "sandbox:build:renderer": "vite build -c vite.sandbox.config.ts",
-    "sandbox:build:main": "tsc -p tsconfig.sandbox.json",
+    "sandbox:build:preload": "mkdir -p dist-sandbox/src/main && cp src/main/preload.cjs dist-sandbox/src/main/preload.cjs",
+    "sandbox:build:main": "tsc -p tsconfig.sandbox.json && npm run sandbox:build:preload",
     "sandbox:start": "npm run build && npm run sandbox:build:renderer && npm run sandbox:build:main && electron dist-sandbox/src/main/main.js"
   },
   "keywords": [],

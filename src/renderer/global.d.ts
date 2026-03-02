@@ -1,18 +1,17 @@
 import type {
-  SandboxOpenDebugDirRequest,
-  SandboxOpenDebugDirResponse,
-  SandboxPickFileRequest,
-  SandboxPickFileResponse,
+  SandboxOpenPathResult,
+  SandboxPickPdfResult,
   SandboxRunOcrRequest,
-  SandboxRunOcrResponse
+  SandboxRunOcrResult
 } from "../shared/ipc/sandbox.js";
 
 declare global {
   interface Window {
-    sandboxApi: {
-      pickFile(request: SandboxPickFileRequest): Promise<SandboxPickFileResponse>;
-      runOcr(request: SandboxRunOcrRequest): Promise<SandboxRunOcrResponse>;
-      openDebugDir(request: SandboxOpenDebugDirRequest): Promise<SandboxOpenDebugDirResponse>;
+    keisSandbox: {
+      pickPassportPdf(): Promise<SandboxPickPdfResult>;
+      pickRegistrationPdf(): Promise<SandboxPickPdfResult>;
+      runOcr(request: SandboxRunOcrRequest): Promise<SandboxRunOcrResult>;
+      openPath(path: string): Promise<SandboxOpenPathResult>;
     };
   }
 }

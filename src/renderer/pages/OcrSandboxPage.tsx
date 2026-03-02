@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { CoreError, FieldReport } from "../../../types.js";
-import type { SandboxRunOcrResponse } from "../../shared/ipc/sandbox.js";
+import type { SandboxRunOcrResult } from "../../shared/ipc/sandbox.js";
+import { mapRunResultToUi } from "./ocrSandboxRunResult.js";
 
 type OcrStatus = "ready" | "running" | "error";
 
@@ -13,6 +13,7 @@ type FormState = {
   phone: string;
 };
 
+
 function compactPath(value: string, max = 60): string {
   if (value.length <= max) {
     return value;
@@ -20,6 +21,11 @@ function compactPath(value: string, max = 60): string {
   const head = Math.max(18, Math.floor(max * 0.45));
   const tail = Math.max(18, max - head - 3);
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
+}
+
+function extractFileName(path: string): string {
+  const chunks = path.split(/[\\/]/u);
+  return chunks[chunks.length - 1] ?? path;
 }
 
 function statusLabel(status: OcrStatus): string {
@@ -39,35 +45,6 @@ function fieldBadge(field: keyof FormState, value: string): "Найдено" | "
   return value.trim() === "" ? "Не найдено" : "Найдено";
 }
 
-function reportRow(report: FieldReport): {
-  field: string;
-  pass: string;
-  confidence: string;
-  psm: string;
-  source: string;
-  roi: string;
-  preview: string;
-} {
-  const attempt = (report.attempts ?? []).find((candidate) => candidate.pass_id === report.pass_id);
-  const roi = `x:${report.roi.x} y:${report.roi.y} w:${report.roi.width} h:${report.roi.height}`;
-  return {
-    field: report.field,
-    pass: report.pass ? "pass" : "fail",
-    confidence: report.confidence.toFixed(2),
-    psm: attempt?.psm === undefined ? "-" : String(attempt.psm),
-    source: report.best_candidate_source ?? attempt?.source ?? "-",
-    roi,
-    preview: String(report.best_candidate_preview ?? "").slice(0, 70)
-  };
-}
-
-function collectErrors(payload: SandboxRunOcrResponse | null, hardError: string | null): CoreError[] {
-  if (hardError !== null) {
-    return [{ code: "INTERNAL_ERROR", message: hardError }];
-  }
-  return payload?.errors ?? [];
-}
-
 export function OcrSandboxPage() {
   const [passportPath, setPassportPath] = useState("");
   const [registrationPath, setRegistrationPath] = useState("");
@@ -81,35 +58,51 @@ export function OcrSandboxPage() {
   });
   const [status, setStatus] = useState<OcrStatus>("ready");
   const [progress, setProgress] = useState(0);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [payload, setPayload] = useState<SandboxRunOcrResponse | null>(null);
-  const [hardError, setHardError] = useState<string | null>(null);
+  const [lastRunResult, setLastRunResult] = useState<SandboxRunOcrResult | null>(null);
+  const [lastThrownError, setLastThrownError] = useState<unknown | null>(null);
 
   const runDisabled = passportPath.trim() === "" || registrationPath.trim() === "" || status === "running";
 
-  const fieldRows = useMemo(() => {
-    if (payload === null) {
-      return [];
-    }
-    return payload.field_reports.map(reportRow);
-  }, [payload]);
+  const runResult = useMemo(() => mapRunResultToUi(lastRunResult, lastThrownError), [lastRunResult, lastThrownError]);
 
-  const errors = useMemo(() => collectErrors(payload, hardError), [payload, hardError]);
-
-  async function onPick(kind: "passport" | "registration") {
+  async function onPickPassport() {
     try {
-      const result = await window.sandboxApi.pickFile({ kind });
-      if (result.canceled || result.path === undefined) {
+      const result = await window.keisSandbox.pickPassportPdf();
+      if (!result.ok) {
+        setLastRunResult(null);
+        setLastThrownError(result.error);
+        setStatus("error");
         return;
       }
-      if (kind === "passport") {
-        setPassportPath(result.path);
-      } else {
-        setRegistrationPath(result.path);
+      if (result.data === null) {
+        return;
       }
-      setHardError(null);
+      setPassportPath(result.data.path);
+      setLastThrownError(null);
     } catch (error) {
-      setHardError(error instanceof Error ? error.message : "Не удалось выбрать файл.");
+      setLastRunResult(null);
+      setLastThrownError(error);
+      setStatus("error");
+    }
+  }
+
+  async function onPickRegistration() {
+    try {
+      const result = await window.keisSandbox.pickRegistrationPdf();
+      if (!result.ok) {
+        setLastRunResult(null);
+        setLastThrownError(result.error);
+        setStatus("error");
+        return;
+      }
+      if (result.data === null) {
+        return;
+      }
+      setRegistrationPath(result.data.path);
+      setLastThrownError(null);
+    } catch (error) {
+      setLastRunResult(null);
+      setLastThrownError(error);
       setStatus("error");
     }
   }
@@ -119,40 +112,51 @@ export function OcrSandboxPage() {
       return;
     }
     setStatus("running");
-    setHardError(null);
+    setLastThrownError(null);
     setProgress(10);
     try {
       setProgress(30);
-      const result = await window.sandboxApi.runOcr({
+      const result = await window.keisSandbox.runOcr({
         passportPath,
         registrationPath
       });
-      setPayload(result);
+      setLastRunResult(result);
+      setProgress(100);
+
+      if (!result.ok) {
+        setStatus("error");
+        return;
+      }
+
       setForm((current) => ({
         ...current,
-        fio: result.fields.fio ?? "",
-        passport_number: result.fields.passport_number ?? "",
-        issued_by: result.fields.issued_by ?? "",
-        dept_code: result.fields.dept_code ?? "",
-        registration: result.fields.registration ?? ""
+        fio: result.data.fields.fio ?? "",
+        passport_number: result.data.fields.passport_number ?? "",
+        issued_by: result.data.fields.issued_by ?? "",
+        dept_code: result.data.fields.dept_code ?? "",
+        registration: result.data.fields.registration ?? ""
       }));
-      setProgress(100);
-      setStatus((result.errors ?? []).length > 0 ? "error" : "ready");
+      setStatus((result.data.errors ?? []).length > 0 ? "error" : "ready");
     } catch (error) {
       setStatus("error");
       setProgress(100);
-      setHardError(error instanceof Error ? error.message : "OCR pipeline завершился с ошибкой.");
+      setLastRunResult(null);
+      setLastThrownError(error);
     }
   }
 
   async function onOpenDebugDir() {
-    const debugDir = payload?.diagnostics.merged?.debugRootDir ?? null;
-    if (debugDir === null) {
+    if (runResult.debugDir === null) {
       return;
     }
-    const opened = await window.sandboxApi.openDebugDir({ dirPath: debugDir });
-    if (!opened.ok) {
-      setHardError(opened.message ?? "Не удалось открыть debug-папку.");
+    try {
+      const opened = await window.keisSandbox.openPath(runResult.debugDir);
+      if (!opened.ok) {
+        setLastThrownError(opened.error);
+        setStatus("error");
+      }
+    } catch (error) {
+      setLastThrownError(error);
       setStatus("error");
     }
   }
@@ -165,20 +169,20 @@ export function OcrSandboxPage() {
         <h1>OCR паспорта и автозаполнение</h1>
         <article className="glass-card">
           <h2>Паспорт (2–3 стр.)</h2>
-          <button onClick={() => onPick("passport")} className="secondary-btn" type="button">
-            Choose file
+          <button onClick={onPickPassport} className="secondary-btn" type="button">
+            Выбрать PDF
           </button>
           <p className="path-label" title={passportPath}>
-            {passportPath ? compactPath(passportPath) : "Файл не выбран"}
+            {passportPath ? extractFileName(passportPath) : "Файл не выбран"}
           </p>
         </article>
         <article className="glass-card">
           <h2>Регистрация</h2>
-          <button onClick={() => onPick("registration")} className="secondary-btn" type="button">
-            Choose file
+          <button onClick={onPickRegistration} className="secondary-btn" type="button">
+            Выбрать PDF
           </button>
           <p className="path-label" title={registrationPath}>
-            {registrationPath ? compactPath(registrationPath) : "Файл не выбран"}
+            {registrationPath ? extractFileName(registrationPath) : "Файл не выбран"}
           </p>
         </article>
         <button className="primary-btn" disabled={runDisabled} onClick={onRunOcr} type="button">
@@ -194,95 +198,76 @@ export function OcrSandboxPage() {
           </div>
           {runDisabled ? <p className="hint">Выберите оба файла: паспорт и регистрацию.</p> : null}
         </div>
-        <button className="toggle-btn" type="button" onClick={() => setShowDiagnostics((prev) => !prev)}>
-          Диагностика
-        </button>
-        {showDiagnostics ? (
-          <section className="diagnostics">
-            <p className="diag-summary">
-              Confidence: {payload?.confidence_score?.toFixed(2) ?? "-"} | merge: {payload?.diagnostics.merged?.strategy ?? "-"}
-            </p>
-            <p className="diag-summary">
-              Passport anchors: {payload?.diagnostics.passport?.summary.anchorsFoundCount ?? "-"} | fallback:{" "}
-              {payload?.diagnostics.passport?.summary.fallbackUsed === null
-                ? "-"
-                : payload?.diagnostics.passport?.summary.fallbackUsed
-                  ? "yes"
-                  : "no"}
-            </p>
-            <p className="diag-summary">
-              Registration anchors: {payload?.diagnostics.registration?.summary.anchorsFoundCount ?? "-"} | fallback:{" "}
-              {payload?.diagnostics.registration?.summary.fallbackUsed === null
-                ? "-"
-                : payload?.diagnostics.registration?.summary.fallbackUsed
-                  ? "yes"
-                  : "no"}
-            </p>
-            <p className="diag-summary">
-              Normalization: threshold={payload?.diagnostics.passport?.normalization.selectedThreshold ?? "-"} | ratio=
-              {payload?.diagnostics.passport?.normalization.finalBlackPixelRatio ?? "-"} | invert=
-              {payload?.diagnostics.passport?.normalization.usedInvert === null
-                ? "-"
-                : payload?.diagnostics.passport?.normalization.usedInvert
-                  ? "yes"
-                  : "no"}{" "}
-              | retries={payload?.diagnostics.passport?.normalization.retryCount ?? "-"}
-            </p>
-            {payload?.diagnostics.merged?.debugRootDir ? (
-              <div className="debug-link-row">
-                <span title={payload.diagnostics.merged.debugRootDir}>
-                  Debug: {compactPath(payload.diagnostics.merged.debugRootDir, 52)}
-                </span>
-                <button type="button" className="secondary-btn" onClick={onOpenDebugDir}>
-                  Открыть папку debug
-                </button>
-              </div>
-            ) : null}
-            <div className="diag-table-wrap">
-              <table className="diag-table">
-                <thead>
+
+        <section className="run-result">
+          <h2>Run Result</h2>
+          <pre className="raw-json">{runResult.rawJson}</pre>
+
+          <div className="diag-table-wrap">
+            <table className="diag-table">
+              <thead>
+                <tr>
+                  <th>field</th>
+                  <th>pass</th>
+                  <th>conf</th>
+                  <th>psm</th>
+                  <th>source</th>
+                  <th>best_preview</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runResult.fieldRows.length === 0 ? (
                   <tr>
-                    <th>field</th>
-                    <th>pass</th>
-                    <th>conf</th>
-                    <th>psm</th>
-                    <th>source</th>
-                    <th>roi</th>
-                    <th>best_preview</th>
+                    <td colSpan={6}>Нет данных</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {fieldRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={7}>Нет данных</td>
+                ) : (
+                  runResult.fieldRows.map((row, index) => (
+                    <tr key={`${row.field}-${row.source}-${index}`}>
+                      <td>{row.field}</td>
+                      <td>{row.pass}</td>
+                      <td>{row.confidence}</td>
+                      <td>{row.psm}</td>
+                      <td>{row.source}</td>
+                      <td title={row.bestPreview}>{compactPath(row.bestPreview, 38)}</td>
                     </tr>
-                  ) : (
-                    fieldRows.map((row) => (
-                      <tr key={`${row.field}-${row.roi}`}>
-                        <td>{row.field}</td>
-                        <td>{row.pass}</td>
-                        <td>{row.confidence}</td>
-                        <td>{row.psm}</td>
-                        <td>{row.source}</td>
-                        <td title={row.roi}>{compactPath(row.roi, 28)}</td>
-                        <td title={row.preview}>{row.preview || "-"}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="norm-block">
+            {runResult.normalizationRows.length === 0 ? (
+              <p className="diag-summary">Normalization: нет данных</p>
+            ) : (
+              runResult.normalizationRows.map((row) => (
+                <p className="diag-summary" key={row.source}>
+                  {row.source}: threshold={row.selectedThreshold} | ratio={row.finalBlackPixelRatio} | invert={row.usedInvert} | retries={row.retryCount}
+                </p>
+              ))
+            )}
+          </div>
+
+          {runResult.debugDir ? (
+            <div className="debug-link-row">
+              <span title={runResult.debugDir}>DebugDir: {compactPath(runResult.debugDir, 52)}</span>
+              <button type="button" className="secondary-btn" onClick={onOpenDebugDir}>
+                Открыть папку
+              </button>
             </div>
-            {errors.length > 0 ? (
-              <div className="error-block">
-                {errors.map((entry, index) => (
-                  <p key={`${entry.code}-${index}`}>
-                    {entry.code}: {entry.message}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+          ) : null}
+
+          {runResult.errors.length > 0 ? (
+            <div className="error-block">
+              <p>Ошибки:</p>
+              {runResult.errors.map((entry, index) => (
+                <p key={`${entry.code}-${index}`}>
+                  {entry.code}: {entry.message} {entry.details === undefined ? "" : `| details=${JSON.stringify(entry.details)}`}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </section>
       </section>
 
       <section className="glass right-panel">

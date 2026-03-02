@@ -8,6 +8,8 @@ if (rootNode === null) {
   throw new Error("Root node not found");
 }
 
+console.log("sandbox renderer boot");
+
 createRoot(rootNode).render(
   <React.StrictMode>
     <OcrSandboxPage />

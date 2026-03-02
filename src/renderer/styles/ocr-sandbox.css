@@ -176,6 +176,32 @@ h2 {
   overflow: auto;
 }
 
+.run-result {
+  border: 1px solid rgba(188, 207, 243, 0.2);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(13, 20, 31, 0.58);
+  max-height: 360px;
+  overflow: auto;
+}
+
+.raw-json {
+  margin: 0;
+  border: 1px solid rgba(186, 203, 231, 0.16);
+  border-radius: 10px;
+  background: rgba(10, 16, 25, 0.8);
+  padding: 8px;
+  color: #d6e2fa;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.norm-block {
+  margin-top: 8px;
+}
+
 .diag-summary {
   margin: 2px 0;
   color: var(--text-muted);

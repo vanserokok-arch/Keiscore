@@ -1,16 +1,17 @@
 import { z } from "zod";
 import { CoreErrorSchema, FieldReportSchema } from "../../../types.js";
-export const SandboxFileKindSchema = z.enum(["passport", "registration"]);
-export const SandboxPickFileRequestSchema = z.object({
-    kind: SandboxFileKindSchema
+export const SandboxPickPdfResponseSchema = z.object({
+    path: z.string()
 });
-export const SandboxPickFileResponseSchema = z.object({
-    canceled: z.boolean(),
-    path: z.string().optional()
+export const SandboxPageRangeSchema = z.object({
+    from: z.number().int().positive(),
+    to: z.number().int().positive()
 });
 export const SandboxRunOcrRequestSchema = z.object({
     passportPath: z.string().min(1),
     registrationPath: z.string().min(1),
+    pdfPageRangePassport: SandboxPageRangeSchema.optional(),
+    pdfPageRangeRegistration: SandboxPageRangeSchema.optional(),
     debugDir: z.string().nullable().optional()
 });
 export const SandboxOcrFieldsSchema = z.object({
@@ -61,15 +62,46 @@ export const SandboxDiagnosticsSchema = z.object({
 export const SandboxRunOcrResponseSchema = z.object({
     fields: SandboxOcrFieldsSchema,
     confidence_score: z.number().min(0).max(1),
+    debugDir: z.string(),
     diagnostics: SandboxDiagnosticsSchema,
     field_reports: z.array(FieldReportSchema),
     errors: z.array(CoreErrorSchema).optional()
 });
-export const SandboxOpenDebugDirRequestSchema = z.object({
-    dirPath: z.string().min(1)
+export const SandboxErrorSchema = CoreErrorSchema;
+export const SandboxPickPdfResultSchema = z.union([
+    z.object({
+        ok: z.literal(true),
+        data: SandboxPickPdfResponseSchema.nullable()
+    }),
+    z.object({
+        ok: z.literal(false),
+        error: SandboxErrorSchema
+    })
+]);
+export const SandboxRunOcrResultSchema = z.union([
+    z.object({
+        ok: z.literal(true),
+        data: SandboxRunOcrResponseSchema
+    }),
+    z.object({
+        ok: z.literal(false),
+        error: SandboxErrorSchema
+    })
+]);
+export const SandboxOpenPathRequestSchema = z.object({
+    path: z.string().min(1)
 });
-export const SandboxOpenDebugDirResponseSchema = z.object({
-    ok: z.boolean(),
-    message: z.string().nullable().optional()
+export const SandboxOpenPathDataSchema = z.object({
+    opened: z.literal(true)
 });
+export const SandboxOpenPathResultSchema = z.union([
+    z.object({
+        ok: z.literal(true),
+        data: SandboxOpenPathDataSchema
+    }),
+    z.object({
+        ok: z.literal(false),
+        error: SandboxErrorSchema
+    })
+]);
 //# sourceMappingURL=sandbox.js.map
