@@ -33,6 +33,7 @@ type RankedCandidate = {
     normalized_preview: string;
     confidence: number;
     regexMatch: number;
+    markerMatch?: number;
     lengthScore: number;
     russianCharRatio: number;
     anchorAlignmentScore: number;

@@ -9,6 +9,10 @@ export declare const SandboxPageRangeSchema: z.ZodObject<{
 export declare const SandboxRunOcrRequestSchema: z.ZodObject<{
     passportPath: z.ZodString;
     registrationPath: z.ZodString;
+    ocrVariant: z.ZodOptional<z.ZodEnum<{
+        v1: "v1";
+        v2: "v2";
+    }>>;
     pdfPageRangePassport: z.ZodOptional<z.ZodObject<{
         from: z.ZodNumber;
         to: z.ZodNumber;

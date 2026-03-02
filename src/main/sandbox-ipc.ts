@@ -180,6 +180,7 @@ function getNormalizationSummary(result: ExtractionResult): {
 async function runOcrForSource(
   path: string,
   debugDir: string | null,
+  ocrVariant: "v1" | "v2",
   pdfPageRange?: {
     from: number;
     to: number;
@@ -198,6 +199,7 @@ async function runOcrForSource(
     const result = await extractRfInternalPassport(
       { kind: "path", path },
       {
+        ocrVariant,
         tesseractLang: "rus",
         ocrTimeoutMs: OCR_TIMEOUT_MS,
         ...(pdfPageRange === undefined ? {} : { pdfPageRange })
@@ -235,13 +237,14 @@ async function runSubOcr(
   source: "passport" | "registration",
   path: string,
   debugDir: string,
+  ocrVariant: "v1" | "v2",
   pdfPageRange?: {
     from: number;
     to: number;
   }
 ): Promise<{ ok: true; result: ExtractionResult; debugDir: string } | { ok: false; result: ExtractionResult; error: CoreError; debugDir: string }> {
   try {
-    const run = await runOcrForSource(path, debugDir, pdfPageRange);
+    const run = await runOcrForSource(path, debugDir, ocrVariant, pdfPageRange);
     return { ok: true, result: run.result, debugDir: run.debugDir ?? debugDir };
   } catch (error) {
     const structured = toCoreError(error);
@@ -288,6 +291,7 @@ export function registerSandboxIpcHandlers(): void {
   ipcMain.handle("sandbox:runOcr", async (_event, payload) => {
     try {
       const request = SandboxRunOcrRequestSchema.parse(payload);
+      const ocrVariant = request.ocrVariant ?? "v1";
       const passportPath = await validateInputPath(request.passportPath);
       const registrationPath = await validateInputPath(request.registrationPath);
       const debugRootDir = await resolveDebugRootDir(request.debugDir);
@@ -302,11 +306,18 @@ export function registerSandboxIpcHandlers(): void {
         debugDir: debugRootDir
       });
 
-      const passportSubRun = await runSubOcr("passport", passportPath, passportDebugDir, request.pdfPageRangePassport);
+      const passportSubRun = await runSubOcr(
+        "passport",
+        passportPath,
+        passportDebugDir,
+        ocrVariant,
+        request.pdfPageRangePassport
+      );
       const registrationSubRun = await runSubOcr(
         "registration",
         registrationPath,
         registrationDebugDir,
+        ocrVariant,
         request.pdfPageRangeRegistration
       );
 

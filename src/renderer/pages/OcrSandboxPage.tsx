@@ -60,6 +60,7 @@ export function OcrSandboxPage() {
   const [progress, setProgress] = useState(0);
   const [lastRunResult, setLastRunResult] = useState<SandboxRunOcrResult | null>(null);
   const [lastThrownError, setLastThrownError] = useState<unknown | null>(null);
+  const [ocrVariant, setOcrVariant] = useState<"v1" | "v2">("v1");
 
   const runDisabled = passportPath.trim() === "" || registrationPath.trim() === "" || status === "running";
 
@@ -118,7 +119,8 @@ export function OcrSandboxPage() {
       setProgress(30);
       const result = await window.keisSandbox.runOcr({
         passportPath,
-        registrationPath
+        registrationPath,
+        ocrVariant
       });
       setLastRunResult(result);
       setProgress(100);
@@ -185,6 +187,14 @@ export function OcrSandboxPage() {
             {registrationPath ? extractFileName(registrationPath) : "Файл не выбран"}
           </p>
         </article>
+        <label className="field-row">
+          <span>Режим OCR</span>
+          <em>{ocrVariant.toUpperCase()}</em>
+          <select value={ocrVariant} onChange={(event) => setOcrVariant(event.target.value as "v1" | "v2")}>
+            <option value="v1">OCR v1</option>
+            <option value="v2">OCR v2</option>
+          </select>
+        </label>
         <button className="primary-btn" disabled={runDisabled} onClick={onRunOcr} type="button">
           Распознать данные
         </button>

@@ -132,7 +132,7 @@ function getNormalizationSummary(result) {
         retryCount: typeof norm?.retryCount === "number" ? norm.retryCount : null
     };
 }
-async function runOcrForSource(path, debugDir, pdfPageRange) {
+async function runOcrForSource(path, debugDir, ocrVariant, pdfPageRange) {
     const previousDebugDir = process.env.KEISCORE_DEBUG_ROI_DIR;
     try {
         if (debugDir === null) {
@@ -142,6 +142,7 @@ async function runOcrForSource(path, debugDir, pdfPageRange) {
             process.env.KEISCORE_DEBUG_ROI_DIR = debugDir;
         }
         const result = await extractRfInternalPassport({ kind: "path", path }, {
+            ocrVariant,
             tesseractLang: "rus",
             ocrTimeoutMs: OCR_TIMEOUT_MS,
             ...(pdfPageRange === undefined ? {} : { pdfPageRange })
@@ -174,9 +175,9 @@ function emptyResultWithError(error) {
         errors: [error]
     };
 }
-async function runSubOcr(source, path, debugDir, pdfPageRange) {
+async function runSubOcr(source, path, debugDir, ocrVariant, pdfPageRange) {
     try {
-        const run = await runOcrForSource(path, debugDir, pdfPageRange);
+        const run = await runOcrForSource(path, debugDir, ocrVariant, pdfPageRange);
         return { ok: true, result: run.result, debugDir: run.debugDir ?? debugDir };
     }
     catch (error) {
@@ -223,6 +224,7 @@ export function registerSandboxIpcHandlers() {
     ipcMain.handle("sandbox:runOcr", async (_event, payload) => {
         try {
             const request = SandboxRunOcrRequestSchema.parse(payload);
+            const ocrVariant = request.ocrVariant ?? "v1";
             const passportPath = await validateInputPath(request.passportPath);
             const registrationPath = await validateInputPath(request.registrationPath);
             const debugRootDir = await resolveDebugRootDir(request.debugDir);
@@ -235,8 +237,8 @@ export function registerSandboxIpcHandlers() {
                 registrationPath,
                 debugDir: debugRootDir
             });
-            const passportSubRun = await runSubOcr("passport", passportPath, passportDebugDir, request.pdfPageRangePassport);
-            const registrationSubRun = await runSubOcr("registration", registrationPath, registrationDebugDir, request.pdfPageRangeRegistration);
+            const passportSubRun = await runSubOcr("passport", passportPath, passportDebugDir, ocrVariant, request.pdfPageRangePassport);
+            const registrationSubRun = await runSubOcr("registration", registrationPath, registrationDebugDir, ocrVariant, request.pdfPageRangeRegistration);
             const passportRun = { result: passportSubRun.result, debugDir: passportSubRun.debugDir };
             const registrationRun = { result: registrationSubRun.result, debugDir: registrationSubRun.debugDir };
             const mergedReports = FIELD_ORDER.flatMap((field) => {

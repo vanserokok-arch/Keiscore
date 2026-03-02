@@ -24,6 +24,7 @@ export declare class InMemoryAuditLogger implements AuditLogger {
     getEvents(): readonly AuditEvent[];
 }
 export interface ExtractOptions {
+    ocrVariant?: "v1" | "v2";
     preferOnline?: boolean;
     onlineTimeoutMs?: number;
     tesseractLang?: "rus" | string;

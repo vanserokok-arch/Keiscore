@@ -365,6 +365,7 @@ const ISSUED_BY_MARKERS = [
 
 function normalizeOptions(opts?: ExtractOptions): ExtractOptions & { logger: AuditLogger } {
   return {
+    ocrVariant: opts?.ocrVariant ?? "v1",
     preferOnline: opts?.preferOnline ?? false,
     onlineTimeoutMs: opts?.onlineTimeoutMs ?? 3000,
     tesseractLang: opts?.tesseractLang ?? "rus",
@@ -588,6 +589,7 @@ type RankedCandidate = {
   normalized_preview: string;
   confidence: number;
   regexMatch: number;
+  markerMatch?: number;
   lengthScore: number;
   russianCharRatio: number;
   anchorAlignmentScore: number;
@@ -642,6 +644,143 @@ export function rankCandidates(candidates: RankedCandidate[]): RankedCandidate[]
     );
 }
 
+function rankCandidatesVariant2(candidates: RankedCandidate[]): RankedCandidate[] {
+  return [...candidates]
+    .map((candidate) => ({
+      ...candidate,
+      rankingScore:
+        candidate.field === "passport_number" || candidate.field === "dept_code"
+          ? clamp01(candidate.regexMatch) * 0.5 + clamp01(candidate.confidence) * 0.3 + clamp01(candidate.lengthScore) * 0.2
+          : clamp01(candidate.russianCharRatio) * 0.4 +
+            clamp01(candidate.confidence) * 0.3 +
+            clamp01(candidate.lengthScore) * 0.2 +
+            clamp01(candidate.markerMatch ?? 0) * 0.1
+    }))
+    .sort(
+      (a, b) =>
+        b.rankingScore - a.rankingScore ||
+        Number(b.validated !== null) - Number(a.validated !== null) ||
+        b.confidence - a.confidence
+    );
+}
+
+function normalizePassportNumberV2(raw: string): string {
+  const compact = String(raw ?? "").replace(/[^0-9№]/gu, "");
+  const match = compact.match(/(\d{4})№?(\d{6})/u);
+  if (!match) return normalizePassportNumber(raw);
+  return `${match[1]} №${match[2]}`;
+}
+
+function normalizeDeptCodeV2(raw: string): string {
+  const compact = String(raw ?? "").replace(/[^0-9\- ]/gu, "").trim();
+  const strict = compact.replace(/\s+/gu, "");
+  if (/^\d{3}-\d{3}$/u.test(strict)) return strict;
+  const rescue = compact.match(/(\d{3})[\s]+(\d{3})/u);
+  if (rescue) return `${rescue[1]}-${rescue[2]}`;
+  const digits = compact.replace(/\D/gu, "");
+  if (/^\d{6}$/u.test(digits)) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return normalizeDeptCodeStrict(raw);
+}
+
+function textMarkerScore(field: PassportField, value: string): number {
+  if (field === "issued_by") {
+    return ISSUED_BY_MARKERS.some((marker) => value.includes(marker)) ? 1 : 0;
+  }
+  if (field === "registration") {
+    return /[А-ЯЁ]/u.test(value) ? 1 : 0;
+  }
+  if (field === "fio") {
+    return /^\s*[А-ЯЁ-]+\s+[А-ЯЁ-]+\s+[А-ЯЁ-]+\s*$/u.test(value) ? 1 : 0;
+  }
+  return 0;
+}
+
+function antiNoiseCyrillicTokens(input: string): string {
+  const tokens = normalizeRussianText(input)
+    .split(/\s+/u)
+    .filter((token) => token.length >= 2)
+    .filter((token) => /^[А-ЯЁ-]+$/u.test(token));
+  return tokens.join(" ").trim();
+}
+
+function shiftRoi(roi: RoiRect, dx: number, dy: number, pageWidth: number, pageHeight: number): RoiRect {
+  return makeRoi(pageWidth, pageHeight, roi.page, roi.x + dx, roi.y + dy, roi.width, roi.height);
+}
+
+function buildGridSweeps(
+  base: RoiRect,
+  pageWidth: number,
+  pageHeight: number,
+  xOffsets: number[],
+  yOffsets: number[]
+): Array<{ roi: RoiRect; sweep: string }> {
+  const out: Array<{ roi: RoiRect; sweep: string }> = [];
+  for (const dx of xOffsets) {
+    for (const dy of yOffsets) {
+      out.push({ roi: shiftRoi(base, dx, dy, pageWidth, pageHeight), sweep: `x${dx}_y${dy}` });
+    }
+  }
+  return out;
+}
+
+function pickAnchorBoxByKey(anchorBoxes: Record<string, AnchorBox> | undefined, needle: string): AnchorBox | undefined {
+  if (anchorBoxes === undefined) return undefined;
+  const key = Object.keys(anchorBoxes).find((item) => item.includes(needle));
+  return key === undefined ? undefined : anchorBoxes[key];
+}
+
+function buildVariant2RoisFromAnchors(
+  current: Record<PassportField, RoiRect>,
+  anchorBoxes: Record<string, AnchorBox> | undefined,
+  pageWidth: number,
+  pageHeight: number
+): Record<PassportField, RoiRect> {
+  if (anchorBoxes === undefined) return current;
+  const fioAnchor = pickAnchorBoxByKey(anchorBoxes, "ФАМИЛИЯ");
+  const issuedByAnchor = pickAnchorBoxByKey(anchorBoxes, "ВЫДАН");
+  const deptAnchor = pickAnchorBoxByKey(anchorBoxes, "КОД ПОДРАЗДЕЛЕНИЯ");
+  const regAnchor = pickAnchorBoxByKey(anchorBoxes, "МЕСТО ЖИТЕЛЬСТВА");
+  return {
+    ...current,
+    fio:
+      fioAnchor === undefined
+        ? current.fio
+        : makeRoi(pageWidth, pageHeight, current.fio.page, fioAnchor.x - 30, fioAnchor.y + fioAnchor.height + 18, 980, 260),
+    issued_by:
+      issuedByAnchor === undefined
+        ? current.issued_by
+        : makeRoi(
+            pageWidth,
+            pageHeight,
+            current.issued_by.page,
+            issuedByAnchor.x - 20,
+            issuedByAnchor.y + issuedByAnchor.height + 26,
+            clampIntValue(current.issued_by.width, 900, 1800),
+            clampIntValue(current.issued_by.height, 360, 980)
+          ),
+    passport_number:
+      deptAnchor === undefined
+        ? current.passport_number
+        : makeRoi(pageWidth, pageHeight, current.passport_number.page, deptAnchor.x - 20, deptAnchor.y - 140, 760, 120),
+    dept_code:
+      deptAnchor === undefined
+        ? current.dept_code
+        : makeRoi(pageWidth, pageHeight, current.dept_code.page, deptAnchor.x - 15, deptAnchor.y + deptAnchor.height + 8, 430, 120),
+    registration:
+      regAnchor === undefined
+        ? current.registration
+        : makeRoi(
+            pageWidth,
+            pageHeight,
+            current.registration.page,
+            regAnchor.x - 20,
+            regAnchor.y + regAnchor.height + 20,
+            clampIntValue(current.registration.width, 1600, 3200),
+            clampIntValue(current.registration.height, 280, 900)
+          )
+  };
+}
+
 function anchorScoreForField(field: PassportField, anchorKeys: Set<string>): number {
   if (anchorKeys.size === 0) {
     return 0.1;
@@ -669,7 +808,33 @@ async function cropToFile(srcPath: string, roi: RoiRect, outPath: string): Promi
     .toFile(outPath);
 }
 
-async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | "digits"): Promise<void> {
+async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | "digits" | "text_v2" | "digits_v2"): Promise<void> {
+  if (mode === "digits_v2") {
+    const meta = await sharp(inPath).metadata();
+    const targetWidth = Math.max(900, Math.round((meta.width ?? 300) * 3));
+    const targetHeight = Math.max(180, Math.round((meta.height ?? 60) * 3));
+    await sharp(inPath)
+      .grayscale()
+      .normalize()
+      .median(1)
+      .resize({ width: targetWidth, height: targetHeight, kernel: "lanczos3", fit: "fill" })
+      .blur(0.3)
+      .threshold(188)
+      .sharpen(0.5, 0.8, 0.8)
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    return;
+  }
+  if (mode === "text_v2") {
+    await sharp(inPath)
+      .grayscale()
+      .normalize()
+      .linear(1.08, -8)
+      .sharpen(0.45, 0.8, 0.8)
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    return;
+  }
   const img = sharp(inPath).grayscale();
   const thr = mode === "digits" ? 205 : 220;
   await img.normalize().median(1).threshold(thr).png({ compressionLevel: 9 }).toFile(outPath);
@@ -680,7 +845,7 @@ async function saveRoiPassDebugArtifacts(params: {
   roi: RoiRect;
   field: PassportField;
   passId: string;
-  mode: "text" | "digits";
+  mode: "text" | "digits" | "text_v2" | "digits_v2";
   stage: "tsv" | "plain";
   cropPath: string;
   prePath: string;
@@ -1009,7 +1174,7 @@ async function ocrTsvLinesForRoi(
   tmp: string,
   lang: string,
   timeoutMs: number,
-  mode: "text" | "digits",
+  mode: "text" | "digits" | "text_v2" | "digits_v2",
   psmList: number[],
   whitelist?: string,
   debugContext?: { field: PassportField; passId: string }
@@ -1282,6 +1447,7 @@ async function resolveRoisWithAnchorFirst(
   anchorsFoundCount: number;
   anchorKeysTop: string[];
   fallbackUsed: boolean;
+  anchorBoxes?: Record<string, AnchorBox>;
   deptCodeAnchorBox?: AnchorBox;
 }> {
   const fallback: Record<PassportField, RoiRect> = {
@@ -1349,6 +1515,7 @@ async function resolveRoisWithAnchorFirst(
         anchorsFoundCount,
         anchorKeysTop,
         fallbackUsed: true,
+        ...(anchors.anchorBoxes === undefined ? {} : { anchorBoxes: anchors.anchorBoxes }),
         ...(deptCodeAnchorBox === undefined ? {} : { deptCodeAnchorBox })
       };
     }
@@ -1365,6 +1532,7 @@ async function resolveRoisWithAnchorFirst(
       anchorsFoundCount,
       anchorKeysTop,
       fallbackUsed,
+      ...(anchors.anchorBoxes === undefined ? {} : { anchorBoxes: anchors.anchorBoxes }),
       ...(deptCodeAnchorBox === undefined ? {} : { deptCodeAnchorBox })
     };
   } catch (error) {
@@ -1405,6 +1573,7 @@ function makeRankedCandidate(params: {
   confidence: number;
   anchorAlignmentScore: number;
   regex?: RegExp | null;
+  markerMatch?: number;
 }): RankedCandidate {
   const validated = validateByField(params.field, params.normalized);
   return {
@@ -1423,6 +1592,7 @@ function makeRankedCandidate(params: {
         : params.regex.test(params.normalized)
           ? 1
           : 0,
+    markerMatch: clamp01(params.markerMatch ?? textMarkerScore(params.field, params.normalized)),
     lengthScore: computeLengthScore(params.field, params.normalized),
     russianCharRatio: computeRussianCharRatio(params.normalized),
     anchorAlignmentScore: clamp01(params.anchorAlignmentScore),
@@ -1495,9 +1665,38 @@ export class RfInternalPassportExtractor {
 
       tmp = await mkdtemp(join(tmpdir(), "keiscore-rfpass-"));
 
-      const { rois, anchorKeys, anchorsFoundCount, anchorKeysTop, fallbackUsed, deptCodeAnchorBox } =
+      const { rois: resolvedRois, anchorKeys, anchorsFoundCount, anchorKeysTop, fallbackUsed, deptCodeAnchorBox, anchorBoxes } =
         await resolveRoisWithAnchorFirst(normalized, logger, width, height, pageIndex);
+      const rois =
+        options.ocrVariant === "v2" ? buildVariant2RoisFromAnchors(resolvedRois, anchorBoxes, width, height) : resolvedRois;
       const thresholdStrategyUsed = normalized.preprocessing?.thresholdStrategy ?? "legacy";
+      const useVariant2 = options.ocrVariant === "v2";
+      const variant2AnchorRoiUsed = useVariant2 && anchorBoxes !== undefined;
+      const extractorAudit: {
+        anchorsFoundCount: number;
+        anchorKeys: string[];
+        fallbackUsed: boolean;
+        fields: Record<
+          PassportField,
+          {
+            roiSource: "anchor" | "ratio";
+            chosenPass: string;
+            chosenSweep: string;
+            bestCandidatePreview: string;
+          }
+        >;
+      } = {
+        anchorsFoundCount,
+        anchorKeys: [...anchorKeysTop],
+        fallbackUsed,
+        fields: {
+          passport_number: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
+          dept_code: { roiSource: variant2AnchorRoiUsed || deptCodeAnchorBox !== undefined || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
+          fio: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
+          issued_by: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
+          registration: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" }
+        }
+      };
 
       const debugDir = process.env.KEISCORE_DEBUG_ROI_DIR ? String(process.env.KEISCORE_DEBUG_ROI_DIR) : "";
       if (debugDir) {
@@ -1562,64 +1761,77 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-        const variants: Array<{ passId: "A" | "B" | "C"; roi: RoiRect; psmList: number[]; confidence: number }> = [
-          { passId: "A", roi, psmList: [6], confidence: 0.82 },
-          {
-            passId: "B",
-            roi: expandRoi(roi, width, height, { left: 0.2, right: 0.2, top: 1.1, bottom: 0.8 }),
-            psmList: [7, 6],
-            confidence: 0.7
-          },
-          {
-            passId: "C",
-            roi: expandRoi(roi, width, height, { left: 0.35, right: 0.35, top: 1.4, bottom: 1.2 }),
-            psmList: [11, 7],
-            confidence: 0.6
-          }
-        ];
+        const variants: Array<{ passId: "A" | "B" | "C"; roi: RoiRect; psmList: number[]; confidence: number; mode: "digits" | "digits_v2" }> =
+          useVariant2
+            ? [
+                { passId: "A", roi: expandRoi(roi, width, height, { left: 0.28, right: 0.28, top: 0.6, bottom: 0.7 }), psmList: [6, 7, 11], confidence: 0.86, mode: "digits_v2" },
+                { passId: "B", roi: expandRoi(roi, width, height, { left: 0.45, right: 0.45, top: 1.1, bottom: 1.1 }), psmList: [7, 11, 6], confidence: 0.74, mode: "digits_v2" },
+                { passId: "C", roi: expandRoi(roi, width, height, { left: 0.6, right: 0.6, top: 1.4, bottom: 1.4 }), psmList: [11, 7, 6], confidence: 0.62, mode: "digits_v2" }
+              ]
+            : [
+                { passId: "A", roi, psmList: [6], confidence: 0.82, mode: "digits" },
+                {
+                  passId: "B",
+                  roi: expandRoi(roi, width, height, { left: 0.2, right: 0.2, top: 1.1, bottom: 0.8 }),
+                  psmList: [7, 6],
+                  confidence: 0.7,
+                  mode: "digits"
+                },
+                {
+                  passId: "C",
+                  roi: expandRoi(roi, width, height, { left: 0.35, right: 0.35, top: 1.4, bottom: 1.2 }),
+                  psmList: [11, 7],
+                  confidence: 0.6,
+                  mode: "digits"
+                }
+              ];
         const allDebugPreviews: string[] = [];
         const allDebugEmptyZones: Array<{ reason: string; crop_path: string | null }> = [];
         for (const variant of variants) {
-          const linesRes = await ocrTsvLinesForRoi(
-            pagePath,
-            variant.roi,
-            tmp,
-            options.tesseractLang ?? "rus",
-            options.ocrTimeoutMs ?? 30_000,
-            "digits",
-            variant.psmList,
-            "0123456789№ ",
-            { field, passId: variant.passId }
-          );
-          allDebugPreviews.push(...linesRes.debug.previews);
-          allDebugEmptyZones.push(...linesRes.debug.emptyZones);
-          const joined = linesRes.lines.map((l) => l.text).join(" ");
-          const digits = normalizePassportNumber(joined);
-          const normalizedText = digits.length >= 10 ? `${digits.slice(0, 4)} ${digits.slice(4, 10)}` : digits;
-
-          attempts.push({
-            pass_id: variant.passId,
-            raw_text_preview: joined.slice(0, 120),
-            normalized_preview: normalizedText.slice(0, 120),
-            source: "zonal_tsv",
-            confidence: variant.confidence,
-            psm: variant.psmList[0] ?? 6
-          });
-          ranked.push(
-            makeRankedCandidate({
-              field,
+          const sweeps = useVariant2
+            ? buildGridSweeps(variant.roi, width, height, [-44, 0, 44], [0])
+            : [{ roi: variant.roi, sweep: "x0_y0" }];
+          for (const sweep of sweeps) {
+            const linesRes = await ocrTsvLinesForRoi(
+              pagePath,
+              sweep.roi,
+              tmp,
+              options.tesseractLang ?? "rus",
+              options.ocrTimeoutMs ?? 30_000,
+              variant.mode,
+              variant.psmList,
+              "0123456789№ -",
+              { field, passId: `${variant.passId}_${sweep.sweep}` }
+            );
+            allDebugPreviews.push(...linesRes.debug.previews);
+            allDebugEmptyZones.push(...linesRes.debug.emptyZones);
+            const joined = linesRes.lines.map((l) => l.text).join(" ");
+            const normalizedText = useVariant2 ? normalizePassportNumberV2(joined) : normalizePassportNumber(joined);
+            const psm = variant.psmList[0] ?? 6;
+            attempts.push({
               pass_id: variant.passId,
+              raw_text_preview: `${sweep.sweep} ${joined}`.slice(0, 120),
+              normalized_preview: normalizedText.slice(0, 120),
               source: "zonal_tsv",
-              psm: variant.psmList[0] ?? 6,
-              raw: joined,
-              normalized: normalizedText,
               confidence: variant.confidence,
-              anchorAlignmentScore,
-              regex: regexForField(field)
-            })
-          );
+              psm
+            });
+            ranked.push(
+              makeRankedCandidate({
+                field,
+                pass_id: variant.passId,
+                source: "zonal_tsv",
+                psm,
+                raw: joined,
+                normalized: normalizedText,
+                confidence: variant.confidence,
+                anchorAlignmentScore,
+                regex: /\d{4}\s*№?\s*\d{6}/u
+              })
+            );
+          }
         }
-        const rankedTop = rankCandidates(ranked);
+        const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
 
         fieldReports.push(
@@ -1637,6 +1849,12 @@ export class RfInternalPassportExtractor {
             rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
           }, rankedTop.slice(0, 3))
         );
+        extractorAudit.fields[field] = {
+          roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio",
+          chosenPass: best?.pass_id ?? "A",
+          chosenSweep: String(attempts.find((item) => item.pass_id === (best?.pass_id ?? "A"))?.raw_text_preview ?? "").split(" ")[0] ?? "",
+          bestCandidatePreview: best?.normalized_preview ?? ""
+        };
 
         fieldDebug[field] = {
           zonal_tsv_lines_preview: allDebugPreviews,
@@ -1659,10 +1877,39 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-        const locatorCandidates =
-          deptCodeAnchorBox === undefined
+        const baseRoi = useVariant2
+          ? expandRoi(
+              roi,
+              width,
+              height,
+              deptCodeAnchorBox === undefined
+                ? { left: 0.8, right: 1.2, top: 1.6, bottom: 2.2 }
+                : { left: 0.5, right: 1.3, top: 0.7, bottom: 1.7 }
+            )
+          : roi;
+        const enforcedHeight = useVariant2 ? clampIntValue(baseRoi.height, 90, 140) : baseRoi.height;
+        const normalizedBaseRoi = { ...baseRoi, height: enforcedHeight };
+        let locatorCandidates = useVariant2
+          ? buildGridSweeps(normalizedBaseRoi, width, height, [-40, 0, 40], [-30, 0, 30]).map((item) => item.roi)
+          : deptCodeAnchorBox === undefined
             ? [roi, shiftRoiVertical(roi, -12, height), shiftRoiVertical(roi, 12, height)]
             : buildDeptCodeRoiCandidates(deptCodeAnchorBox, width, height, roi.page);
+        if (useVariant2) {
+          const pRoi = rois.passport_number;
+          const nearPassport = makeRoi(
+            width,
+            height,
+            roi.page,
+            pRoi.x - 80,
+            pRoi.y - 280,
+            clampIntValue(pRoi.width * 0.75, 360, 620),
+            140
+          );
+          locatorCandidates = [
+            ...locatorCandidates,
+            ...buildGridSweeps(nearPassport, width, height, [-120, -40, 0, 40, 120], [-40, 0, 40]).map((item) => item.roi)
+          ];
+        }
         const scored = await Promise.all(
           locatorCandidates.map(async (candidateRoi) => ({
             roi: candidateRoi,
@@ -1672,11 +1919,11 @@ export class RfInternalPassportExtractor {
         const topCandidates = scored
           .filter((item) => item.inkScore >= 0.01)
           .sort((a, b) => b.inkScore - a.inkScore)
-          .slice(0, 6);
+          .slice(0, useVariant2 ? 3 : 6);
         const debugDir = (process.env.KEISCORE_DEBUG_ROI_DIR ?? "").trim();
         if (debugDir !== "") {
           await writeFile(
-            join(debugDir, "dept_code_locator_candidates.json"),
+            join(debugDir, useVariant2 ? "dept_code_locator_candidates_v2.json" : "dept_code_locator_candidates.json"),
             JSON.stringify(
               {
                 total: scored.length,
@@ -1696,43 +1943,48 @@ export class RfInternalPassportExtractor {
           const item = topCandidates[i];
           if (item === undefined) continue;
           const passId: "A" | "B" | "C" = i === 0 ? "A" : i === 1 ? "B" : "C";
-          const lines = await ocrDeptCodeStrictLinesForRoi(
+          const psmList = useVariant2 ? [7, 6] : [7];
+          const primaryPsm = psmList[0] ?? 7;
+          const linesRes = await ocrTsvLinesForRoi(
             pagePath,
             item.roi,
             tmpDir,
             options.tesseractLang ?? "rus",
             options.ocrTimeoutMs ?? 30_000,
+            useVariant2 ? "digits_v2" : "digits",
+            psmList,
+            "0123456789- ",
             { field, passId: `loc${i + 1}` }
           );
-          const joined = lines.map((l) => l.text).join(" ");
-          const normalizedText = normalizeDeptCodeStrict(joined);
-          const confidence = lines.reduce((best, line) => Math.max(best, line.avgConf), 0);
+          const joined = linesRes.lines.map((l) => l.text).join(" ");
+          const normalizedText = useVariant2 ? normalizeDeptCodeV2(joined) : normalizeDeptCodeStrict(joined);
+          const confidence = Math.max(linesRes.lines.reduce((best, line) => Math.max(best, line.avgConf), 0), useVariant2 ? 0.3 : 0.1);
           attempts.push({
             pass_id: passId,
             raw_text_preview: joined.slice(0, 120),
             normalized_preview: normalizedText.slice(0, 120),
             source: "zonal_tsv",
             confidence,
-            psm: 7
+            psm: primaryPsm
           });
           ranked.push(
             makeRankedCandidate({
               field,
               pass_id: passId,
               source: "zonal_tsv",
-              psm: 7,
+              psm: primaryPsm,
               raw: joined,
               normalized: normalizedText,
               confidence,
               anchorAlignmentScore,
-              regex: regexForField(field)
+              regex: /\d{3}-\d{3}/u
             })
           );
           if (/^\d{3}-\d{3}$/u.test(normalizedText)) {
             break;
           }
         }
-        const rankedTop = rankCandidates(ranked);
+        const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
 
         fieldReports.push(
@@ -1750,6 +2002,12 @@ export class RfInternalPassportExtractor {
             rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
           }, rankedTop.slice(0, 3))
         );
+        extractorAudit.fields[field] = {
+          roiSource: variant2AnchorRoiUsed || deptCodeAnchorBox !== undefined || !fallbackUsed ? "anchor" : "ratio",
+          chosenPass: best?.pass_id ?? "A",
+          chosenSweep: "topCandidate",
+          bestCandidatePreview: best?.normalized_preview ?? ""
+        };
         fieldDebug[field] = {
           thresholdStrategyUsed,
           locator_candidates: topCandidates.map((item) => ({
@@ -1781,13 +2039,13 @@ export class RfInternalPassportExtractor {
               tmp,
               options.tesseractLang ?? "rus",
               options.ocrTimeoutMs ?? 30_000,
-              "text",
+              useVariant2 ? "text_v2" : "text",
               [config.psm],
               "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ- ",
               { field, passId: config.passId }
             );
             const bestLine = linesRes.lines.sort((a, b) => b.avgConf - a.avgConf)[0];
-            const clean = cleanCyrillicWords(bestLine?.text ?? "");
+            const clean = antiNoiseCyrillicTokens(cleanCyrillicWords(bestLine?.text ?? ""));
             if (clean.length >= 3 && clean.length <= 30 && !/\d/u.test(clean)) {
               zoneTexts.push(clean);
               zoneConfidence += Number(bestLine?.avgConf ?? 0);
@@ -1846,11 +2104,12 @@ export class RfInternalPassportExtractor {
               raw,
               normalized: clean,
               confidence: 0.15,
-              anchorAlignmentScore
+              anchorAlignmentScore,
+              markerMatch: textMarkerScore(field, clean)
             })
           );
         }
-        const rankedTop = rankCandidates(ranked);
+        const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
@@ -1867,6 +2126,12 @@ export class RfInternalPassportExtractor {
             rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
           }, rankedTop.slice(0, 3))
         );
+        extractorAudit.fields[field] = {
+          roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio",
+          chosenPass: best?.pass_id ?? "C",
+          chosenSweep: "split3",
+          bestCandidatePreview: best?.normalized_preview ?? ""
+        };
       }
 
       // issued_by
@@ -1887,7 +2152,7 @@ export class RfInternalPassportExtractor {
             tmp,
             options.tesseractLang ?? "rus",
             options.ocrTimeoutMs ?? 30_000,
-            "text",
+            useVariant2 ? "text_v2" : "text",
             [config.psm],
             undefined,
             { field, passId: config.passId }
@@ -1913,11 +2178,12 @@ export class RfInternalPassportExtractor {
               raw: normalized,
               normalized,
               confidence: clamp01((candidate?.conf ?? 0.2) + Math.min(0.2, markerHits * 0.05)),
-              anchorAlignmentScore
+              anchorAlignmentScore,
+              markerMatch: markerHits > 0 ? 1 : 0
             })
           );
         }
-        const rankedTop = rankCandidates(ranked);
+        const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
@@ -1934,6 +2200,12 @@ export class RfInternalPassportExtractor {
             rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
           }, rankedTop.slice(0, 3))
         );
+        extractorAudit.fields[field] = {
+          roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio",
+          chosenPass: best?.pass_id ?? "C",
+          chosenSweep: "base",
+          bestCandidatePreview: best?.normalized_preview ?? ""
+        };
       }
 
       // registration
@@ -1954,7 +2226,7 @@ export class RfInternalPassportExtractor {
             tmp,
             options.tesseractLang ?? "rus",
             options.ocrTimeoutMs ?? 30_000,
-            "text",
+            useVariant2 ? "text_v2" : "text",
             [config.psm],
             undefined,
             { field, passId: config.passId }
@@ -1979,11 +2251,12 @@ export class RfInternalPassportExtractor {
               raw: normalized,
               normalized,
               confidence: regCandidate?.conf ?? 0.1,
-              anchorAlignmentScore
+              anchorAlignmentScore,
+              markerMatch: textMarkerScore(field, normalized)
             })
           );
         }
-        const rankedTop = rankCandidates(ranked);
+        const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
         fieldReports.push(
           bestCandidateReport(field, roi, attempts, {
@@ -2000,12 +2273,22 @@ export class RfInternalPassportExtractor {
             rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
           }, rankedTop.slice(0, 3))
         );
+        extractorAudit.fields[field] = {
+          roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio",
+          chosenPass: best?.pass_id ?? "C",
+          chosenSweep: "base",
+          bestCandidatePreview: best?.normalized_preview ?? ""
+        };
+      }
+
+      if (debugDir) {
+        await writeFile(join(debugDir, "extractor_audit.json"), JSON.stringify(extractorAudit, null, 2), "utf8").catch(() => undefined);
       }
 
       const diagnostics = buildDiagnostics(undefined, normalized.preprocessing, fieldDebug);
       const get = (f: PassportField) => fieldReports.find((r) => r.field === f) ?? null;
 
-      const result = {
+      const result: ExtractionResult = {
         ...BASE_RESULT,
         fio: get("fio")?.validator_passed ? (get("fio")?.best_candidate_normalized ?? null) : null,
         passport_number: get("passport_number")?.validator_passed
@@ -2019,6 +2302,33 @@ export class RfInternalPassportExtractor {
         field_reports: fieldReports,
         errors
       };
+      let fallbackMergedFromV1 = false;
+      if (useVariant2) {
+        const prevDebugDir = process.env.KEISCORE_DEBUG_ROI_DIR;
+        try {
+          delete process.env.KEISCORE_DEBUG_ROI_DIR;
+          const legacy = await RfInternalPassportExtractor.extract(input, { ...options, ocrVariant: "v1" });
+          for (const field of FIELD_ORDER) {
+            if ((result as any)[field] === null && (legacy as any)[field] !== null) {
+              (result as any)[field] = (legacy as any)[field];
+              fallbackMergedFromV1 = true;
+            }
+            const idx = result.field_reports.findIndex((report) => report.field === field);
+            const legacyReport = legacy.field_reports.find((report) => report.field === field);
+            if (idx >= 0 && legacyReport !== undefined && result.field_reports[idx]?.validator_passed === false && legacyReport.validator_passed) {
+              result.field_reports[idx] = legacyReport;
+              fallbackMergedFromV1 = true;
+            }
+          }
+        } finally {
+          if (prevDebugDir === undefined) {
+            delete process.env.KEISCORE_DEBUG_ROI_DIR;
+          } else {
+            process.env.KEISCORE_DEBUG_ROI_DIR = prevDebugDir;
+          }
+        }
+        fieldDebug.v2_fallback_legacy_used = fallbackMergedFromV1;
+      }
 
       for (const f of FIELD_ORDER) {
         const value = (result as any)[f] as string | null;

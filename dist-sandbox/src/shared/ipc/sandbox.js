@@ -10,6 +10,7 @@ export const SandboxPageRangeSchema = z.object({
 export const SandboxRunOcrRequestSchema = z.object({
     passportPath: z.string().min(1),
     registrationPath: z.string().min(1),
+    ocrVariant: z.enum(["v1", "v2"]).optional(),
     pdfPageRangePassport: SandboxPageRangeSchema.optional(),
     pdfPageRangeRegistration: SandboxPageRangeSchema.optional(),
     debugDir: z.string().nullable().optional()

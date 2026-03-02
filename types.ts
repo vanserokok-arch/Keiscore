@@ -65,6 +65,7 @@ export class InMemoryAuditLogger implements AuditLogger {
 }
 
 export interface ExtractOptions {
+  ocrVariant?: "v1" | "v2";
   preferOnline?: boolean;
   onlineTimeoutMs?: number;
   tesseractLang?: "rus" | string;
