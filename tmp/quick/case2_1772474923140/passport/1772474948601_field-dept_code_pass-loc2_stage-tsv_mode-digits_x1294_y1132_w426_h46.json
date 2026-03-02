@@ -1,0 +1,19 @@
+{
+  "field": "dept_code",
+  "passId": "loc2",
+  "stage": "tsv",
+  "mode": "digits",
+  "roi": {
+    "x": 1294,
+    "y": 1132,
+    "width": 426,
+    "height": 46,
+    "page": 0
+  },
+  "psmList": [
+    7
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474923140/passport/1772474948601_field-dept_code_pass-loc2_stage-tsv_mode-digits_x1294_y1132_w426_h46_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474923140/passport/1772474948601_field-dept_code_pass-loc2_stage-tsv_mode-digits_x1294_y1132_w426_h46_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474923140/passport/1772474948601_field-dept_code_pass-loc2_stage-tsv_mode-digits_x1294_y1132_w426_h46_overlay.png"
+}

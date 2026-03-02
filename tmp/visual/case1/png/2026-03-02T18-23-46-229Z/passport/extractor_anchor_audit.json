@@ -1,0 +1,29 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "РОСС",
+    "ВЫДАН",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ФАМИЛИЯ",
+    "ОТЧЕСТВО",
+    "ФАМИЛИЯ",
+    "ИМЯ",
+    "ПОДРАЗД",
+    "ОТЧЕСТВО",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": false,
+  "deptCodeAnchorBox": {
+    "x": 1135,
+    "y": 882,
+    "width": 259,
+    "height": 30
+  },
+  "page_for_search_path": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-23-46-229Z/passport/page_for_search.png",
+  "page_for_search_metrics": {
+    "blackPixelRatio": 0.0774,
+    "contrastScore": 1,
+    "anchorsDetected": 5,
+    "patternCandidatesDetected": 7
+  }
+}

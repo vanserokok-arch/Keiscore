@@ -1,0 +1,20 @@
+{
+  "field": "passport_number",
+  "passId": "C_x0_y0",
+  "stage": "tsv",
+  "mode": "digits",
+  "roi": {
+    "x": 2065,
+    "y": 767,
+    "width": 1700,
+    "height": 353,
+    "page": 0
+  },
+  "psmList": [
+    11,
+    7
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-23-46-229Z/registration/1772476076887_field-passport_number_pass-C_x0_y0_stage-tsv_mode-digits_x2065_y767_w1700_h353_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-23-46-229Z/registration/1772476076887_field-passport_number_pass-C_x0_y0_stage-tsv_mode-digits_x2065_y767_w1700_h353_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-23-46-229Z/registration/1772476076887_field-passport_number_pass-C_x0_y0_stage-tsv_mode-digits_x2065_y767_w1700_h353_overlay.png"
+}

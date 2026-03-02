@@ -1,0 +1,36 @@
+{
+  "total": 3,
+  "selectedTop": 3,
+  "candidates": [
+    {
+      "roi": {
+        "x": 2304,
+        "y": 515,
+        "width": 587,
+        "height": 120,
+        "page": 0
+      },
+      "inkScore": 0.240943
+    },
+    {
+      "roi": {
+        "x": 2304,
+        "y": 503,
+        "width": 587,
+        "height": 120,
+        "page": 0
+      },
+      "inkScore": 0.267561
+    },
+    {
+      "roi": {
+        "x": 2304,
+        "y": 527,
+        "width": 587,
+        "height": 120,
+        "page": 0
+      },
+      "inkScore": 0.253166
+    }
+  ]
+}

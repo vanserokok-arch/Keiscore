@@ -1,0 +1,43 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "2445"
+    },
+    "dept_code": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": ""
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА"
+    }
+  }
+}

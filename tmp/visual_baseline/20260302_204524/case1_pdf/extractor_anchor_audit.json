@@ -1,0 +1,17 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "РОСС",
+    "ВЫДАН",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ОТЧЕСТВО",
+    "ПОЛ"
+  ],
+  "fallbackUsed": false,
+  "deptCodeAnchorBox": {
+    "x": 1182,
+    "y": 917,
+    "width": 270,
+    "height": 32
+  }
+}

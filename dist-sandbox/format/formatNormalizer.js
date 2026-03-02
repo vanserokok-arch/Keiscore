@@ -717,6 +717,7 @@ async function preprocessRasterPage(source, logger) {
         deskewAngleDeg: Number(deskew.toFixed(2)),
         blackPixelRatio: Number(crop.blackPixelRatio.toFixed(4)),
         thresholdStrategy: crop.thresholdStrategy,
+        safeMode: crop.safeMode,
         retryCount: crop.retryCount,
         usedInvert: crop.usedInvert,
         finalThreshold: crop.threshold,
@@ -968,6 +969,7 @@ async function computeAdaptiveContentCrop(source) {
     let retryCount = 0;
     let usedInvert = false;
     let best = await evaluateAdaptiveCrop(processed, "otsu");
+    let safeMode = best.blackPixelRatio > 0.35;
     // Retry path for under-inked scans.
     if (adaptiveThresholdRetryDecision(best.blackPixelRatio).mode === "contrast_boost") {
         processed = await applyMildUnsharp(await applyClaheLikeStretch(source, 1.35));
@@ -976,7 +978,7 @@ async function computeAdaptiveContentCrop(source) {
     }
     // Retry path for over-inked scans: progressively lower threshold.
     if (adaptiveThresholdRetryDecision(best.blackPixelRatio).mode === "lower_threshold") {
-        best = await lowerThresholdUntilTarget(processed, best, 6);
+        best = await lowerThresholdUntilTarget(processed, best, 6, safeMode ? "safe_mode_lower_threshold" : "lower_threshold");
         retryCount += best.thresholdStrategy.includes("iter_") ? extractRetryCount(best.thresholdStrategy) : 0;
     }
     // Safety branch for inverse/dark scans: evaluate negate, keep it only when ratio is closer to target.
@@ -995,7 +997,8 @@ async function computeAdaptiveContentCrop(source) {
             usedInvert = true;
         }
     }
-    return { processed, crop: { ...best, retryCount, usedInvert } };
+    safeMode = safeMode || best.blackPixelRatio > 0.35;
+    return { processed, crop: { ...best, retryCount, usedInvert, safeMode } };
 }
 export function adaptiveThresholdRetryDecision(blackPixelRatio) {
     if (blackPixelRatio > 0.35) {
@@ -1027,10 +1030,11 @@ async function lowerThresholdUntilTarget(source, seed, maxIterations, label = "l
     let best = seed;
     let threshold = seed.threshold;
     let iteration = 0;
+    const step = label.includes("safe_mode") ? 25 : 15;
     while (iteration < maxIterations && threshold > 120 && !isTargetBlackPixelRatio(best.blackPixelRatio)) {
         if (best.blackPixelRatio <= 0.25)
             break;
-        threshold = clampInt(threshold - 15, 120, 245);
+        threshold = clampInt(threshold - step, 90, 245);
         const pass = await evaluateAdaptiveCrop(source, `${label}_iter_${iteration + 1}_t${threshold}`, threshold);
         best = pass;
         iteration += 1;

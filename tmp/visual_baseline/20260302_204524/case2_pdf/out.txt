@@ -1,0 +1,761 @@
+=== normalizer_audit ===
+[
+  {
+    "ts": 1772473537105,
+    "stage": "normalizer",
+    "level": "info",
+    "message": "PDF page range resolved.",
+    "data": {
+      "pageCount": 1,
+      "requestedRange": null,
+      "resolvedRange0based": {
+        "from": 0,
+        "to": 0
+      },
+      "pdftoppmRange1based": {
+        "f": 1,
+        "l": 1
+      }
+    }
+  }
+]
+=== normalized_pages ===
+{
+  "pdfPageRange": null,
+  "normalized_pages": [
+    {
+      "pageNumber": 0,
+      "width": 2893,
+      "height": 3952,
+      "hasImagePath": true
+    }
+  ]
+}
+=== extractor_anchor_audit ===
+{
+  "anchorsFoundCount": 4,
+  "anchorKeys": [
+    "ВЫДАН",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ"
+  ],
+  "fallbackUsed": true
+}
+=== debug_roi_dir ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case2_pdf"
+}
+=== debug_overlay ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case2_pdf",
+  "normalized_page": "tmp/visual_baseline/20260302_204524/case2_pdf/normalized_page.png",
+  "overlay_zones": "tmp/visual_baseline/20260302_204524/case2_pdf/overlay_zones.png",
+  "crops": [
+    "tmp/visual_baseline/20260302_204524/case2_pdf/fio_zone_1.png",
+    "tmp/visual_baseline/20260302_204524/case2_pdf/fio_zone_2.png",
+    "tmp/visual_baseline/20260302_204524/case2_pdf/fio_zone_3.png",
+    "tmp/visual_baseline/20260302_204524/case2_pdf/issued_zone_1.png",
+    "tmp/visual_baseline/20260302_204524/case2_pdf/issued_zone_2.png",
+    "tmp/visual_baseline/20260302_204524/case2_pdf/issued_zone_3.png"
+  ]
+}
+=== normalization ===
+{
+  "crop_bbox": {
+    "x": 426,
+    "y": 190,
+    "width": 3764,
+    "height": 3952,
+    "page": 0
+  },
+  "content_bbox": {
+    "x": 426,
+    "y": 190,
+    "width": 3764,
+    "height": 3952,
+    "page": 0
+  },
+  "passport_bbox": {
+    "x": 0,
+    "y": 0,
+    "width": 2893,
+    "height": 3952,
+    "page": 0
+  },
+  "applied_padding": 44,
+  "final_size": {
+    "width": 2893,
+    "height": 3952
+  },
+  "rotation_deg": 0,
+  "deskew_angle_deg": -2,
+  "threshold": 143,
+  "threshold_strategy": "otsu",
+  "retry_count": 0,
+  "final_threshold": 143,
+  "used_invert": false,
+  "orientation_score": 2.2,
+  "black_pixel_ratio": 0.0811,
+  "final_black_pixel_ratio": 0.0811
+}
+=== fields ===
+{
+  "field": "passport_number",
+  "roi": {
+    "x": 1917,
+    "y": 1588,
+    "width": 868,
+    "height": 95,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 82460,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "dept_code",
+  "roi": {
+    "x": 2029,
+    "y": 1705,
+    "width": 291,
+    "height": 67,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 19497,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 7,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "fio",
+  "roi": {
+    "x": 231,
+    "y": 1593,
+    "width": 2025,
+    "height": 168,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 340200,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "roi": {
+    "x": 1302,
+    "y": 1344,
+    "width": 1504,
+    "height": 948,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 1425792,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 4,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "registration",
+  "roi": {
+    "x": 231,
+    "y": 3083,
+    "width": 2430,
+    "height": 632,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 1535760,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+=== best_candidates ===
+=== fio_mrz_attempts ===
+[]
+{
+  "field": "fio",
+  "roiCandidate": "Т У ДИ О ВАНИЙ",
+  "mrzCandidate": "",
+  "similarityScore": null,
+  "chosen": {
+    "source": "roi",
+    "confidence": null,
+    "normalizedText": "",
+    "validatorPassed": false,
+    "finalFio": null
+  },
+  "nullReason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "candidate": "",
+  "digitRatio": 0,
+  "markersFound": [],
+  "chosen": {
+    "source": "zonal_tsv",
+    "validatorPassed": false
+  }
+}
+=== field_debug_compact ===
+{
+  "fio": {
+    "source_counts": {
+      "roi": 1,
+      "mrz": 0,
+      "zonal_tsv": 0,
+      "page": 0
+    },
+    "top3": [
+      {
+        "raw_preview": "т —.\nУ < _ ди 4—0\nваний\n",
+        "normalized_preview": "Т У ДИ О ВАНИЙ",
+        "confidence": 0.15,
+        "psm": 6,
+        "source": "roi",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": "т —.\nУ < _ ди 4—0\nваний\n",
+        "normalized_preview": "Т У ДИ О ВАНИЙ",
+        "confidence": 0.15,
+        "psm": 6,
+        "source": "roi",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      }
+    ]
+  },
+  "issued_by": {
+    "source_counts": {
+      "roi": 0,
+      "mrz": 0,
+      "zonal_tsv": 2,
+      "page": 0
+    },
+    "top3": [
+      {
+        "raw_preview": ". АННИ Я ПОДНИГЬ",
+        "normalized_preview": ". АННИ Я ПОДНИГЬ",
+        "confidence": 0.30000000000000004,
+        "psm": 4,
+        "source": "zonal_tsv",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": "ФА 1 А 18 РЫ -. О ТЫ КУ. . ИНЯ ОФ АГНИ Я ПОАНИСЬ",
+        "normalized_preview": "ФА 1 А 18 РЫ -. О ТЫ КУ. . ИНЯ ОФ АГНИ Я ПОАНИСЬ",
+        "confidence": 0.30000000000000004,
+        "psm": 6,
+        "source": "zonal_tsv",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": ". АННИ Я ПОДНИГЬ",
+        "normalized_preview": ". АННИ Я ПОДНИГЬ",
+        "confidence": 0.2,
+        "psm": 4,
+        "source": "zonal_tsv",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      }
+    ]
+  }
+}
+=== roi_bounds_audit ===
+{
+  "minX": 231,
+  "minY": 1344,
+  "maxX": 2806,
+  "maxY": 3715
+}
+=== result ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": null,
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0.6,
+  "quality_metrics": {
+    "blur_score": 0,
+    "contrast_score": 0,
+    "geometric_score": 0
+  },
+  "diagnostics": {
+    "normalization": {
+      "applied": true,
+      "selectedThreshold": 143,
+      "cropBbox": {
+        "x": 426,
+        "y": 190,
+        "width": 3764,
+        "height": 3952,
+        "page": 0
+      },
+      "content_bbox": {
+        "x": 426,
+        "y": 190,
+        "width": 3764,
+        "height": 3952,
+        "page": 0
+      },
+      "passport_bbox": {
+        "x": 0,
+        "y": 0,
+        "width": 2893,
+        "height": 3952,
+        "page": 0
+      },
+      "applied_padding": 44,
+      "final_size": {
+        "width": 2893,
+        "height": 3952
+      },
+      "rotationDeg": 0,
+      "orientationScore": 2.2,
+      "deskewAngleDeg": -2,
+      "blackPixelRatio": 0.0811,
+      "thresholdStrategy": "otsu",
+      "retryCount": 0,
+      "usedInvert": false,
+      "finalThreshold": 143,
+      "finalBlackPixelRatio": 0.0811
+    },
+    "field_debug": {}
+  },
+  "field_reports": [
+    {
+      "field": "passport_number",
+      "roi": {
+        "x": 1917,
+        "y": 1588,
+        "width": 868,
+        "height": 95,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "x0_y0 - - 14",
+          "normalized_preview": "14",
+          "source": "zonal_tsv",
+          "confidence": 0.82,
+          "psm": 6
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "x0_y0 3",
+          "normalized_preview": "3",
+          "source": "zonal_tsv",
+          "confidence": 0.7,
+          "psm": 7
+        },
+        {
+          "pass_id": "C",
+          "raw_text_preview": "x0_y0 4 0",
+          "normalized_preview": "40",
+          "source": "zonal_tsv",
+          "confidence": 0.6,
+          "psm": 11
+        }
+      ],
+      "best_candidate_preview": "14",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 3,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "- - 14",
+            "normalized_preview": "14",
+            "confidence": 0.82,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "3",
+            "normalized_preview": "3",
+            "confidence": 0.7,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "4 0",
+            "normalized_preview": "40",
+            "confidence": 0.6,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "dept_code",
+      "roi": {
+        "x": 2029,
+        "y": 1705,
+        "width": 291,
+        "height": 67,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "B",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.1,
+          "psm": 7
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "18",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.11069221000000001,
+          "psm": 7
+        }
+      ],
+      "best_candidate_preview": "",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "18",
+            "normalized_preview": "",
+            "confidence": 0.11069221000000001,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.1,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "18",
+            "normalized_preview": "",
+            "confidence": 0.11069221000000001,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "fio",
+      "roi": {
+        "x": 231,
+        "y": 1593,
+        "width": 2025,
+        "height": 168,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "C",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "C",
+          "raw_text_preview": "т —.\nУ < _ ди 4—0\nваний\n",
+          "normalized_preview": "Т У ДИ О ВАНИЙ",
+          "source": "roi",
+          "confidence": 0.15,
+          "psm": 6
+        }
+      ],
+      "best_candidate_preview": "Т У ДИ О ВАНИЙ",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 1,
+          "mrz": 0,
+          "zonal_tsv": 0,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "т —.\nУ < _ ди 4—0\nваний\n",
+            "normalized_preview": "Т У ДИ О ВАНИЙ",
+            "confidence": 0.15,
+            "psm": 6,
+            "source": "roi",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "т —.\nУ < _ ди 4—0\nваний\n",
+            "normalized_preview": "Т У ДИ О ВАНИЙ",
+            "confidence": 0.15,
+            "psm": 6,
+            "source": "roi",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "issued_by",
+      "roi": {
+        "x": 1302,
+        "y": 1344,
+        "width": 1504,
+        "height": 948,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": ". АННИ Я ПОДНИГЬ",
+          "normalized_preview": ". АННИ Я ПОДНИГЬ",
+          "source": "zonal_tsv",
+          "confidence": 0.2,
+          "psm": 4
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "ФА 1 А 18 РЫ -. О ТЫ КУ. . ИНЯ ОФ АГНИ Я ПОАНИСЬ",
+          "normalized_preview": "ФА 1 А 18 РЫ -. О ТЫ КУ. . ИНЯ ОФ АГНИ Я ПОАНИСЬ",
+          "source": "zonal_tsv",
+          "confidence": 0.2,
+          "psm": 6
+        }
+      ],
+      "best_candidate_preview": ". АННИ Я ПОДНИГЬ",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": ". АННИ Я ПОДНИГЬ",
+            "normalized_preview": ". АННИ Я ПОДНИГЬ",
+            "confidence": 0.30000000000000004,
+            "psm": 4,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "ФА 1 А 18 РЫ -. О ТЫ КУ. . ИНЯ ОФ АГНИ Я ПОАНИСЬ",
+            "normalized_preview": "ФА 1 А 18 РЫ -. О ТЫ КУ. . ИНЯ ОФ АГНИ Я ПОАНИСЬ",
+            "confidence": 0.30000000000000004,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": ". АННИ Я ПОДНИГЬ",
+            "normalized_preview": ". АННИ Я ПОДНИГЬ",
+            "confidence": 0.2,
+            "psm": 4,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "registration",
+      "roi": {
+        "x": 231,
+        "y": 3083,
+        "width": 2430,
+        "height": 632,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.2,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+          "normalized_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+          "source": "zonal_tsv",
+          "confidence": 0.26999844285714286,
+          "psm": 6
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "ММ. \"АНА САН ЦИ РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+          "normalized_preview": "ММ. \"АНА САН ЦИ РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+          "source": "zonal_tsv",
+          "confidence": 0.20069685791666667,
+          "psm": 11
+        }
+      ],
+      "best_candidate_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+            "normalized_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+            "confidence": 0.26999844285714286,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "ММ. \"АНА САН ЦИ РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+            "normalized_preview": "ММ. \"АНА САН ЦИ РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+            "confidence": 0.20069685791666667,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+            "normalized_preview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК",
+            "confidence": 0.26999844285714286,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: fio"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: passport_number"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: issued_by"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: dept_code"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: registration"
+    },
+    {
+      "code": "REQUIRE_MANUAL_REVIEW",
+      "message": "Overall confidence is below manual-review threshold.",
+      "details": {
+        "confidence_score": 0.6
+      }
+    }
+  ]
+}
+=== final_fields ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": null,
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0.6
+}

@@ -1,0 +1,42 @@
+{
+  "anchorsFoundCount": 4,
+  "anchorKeys": [
+    "ВЫДАН",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "14"
+    },
+    "dept_code": {
+      "roiSource": "ratio",
+      "chosenPass": "B",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": ""
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "Т У ДИ О ВАНИЙ"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": ". АННИ Я ПОДНИГЬ"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "РМЕИЗМАЧОКОУ ПОМАМ ЗЕРСЕЕУ ТЗ КК"
+    }
+  }
+}

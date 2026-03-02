@@ -1,0 +1,19 @@
+{
+  "field": "dept_code",
+  "passId": "loc1",
+  "stage": "tsv",
+  "mode": "digits",
+  "roi": {
+    "x": 2675,
+    "y": 989,
+    "width": 302,
+    "height": 70,
+    "page": 0
+  },
+  "psmList": [
+    7
+  ],
+  "before": "tmp/visual_baseline/20260302_204524/case2_reg/1772473858066_field-dept_code_pass-loc1_stage-tsv_mode-digits_x2675_y989_w302_h70_before.png",
+  "after": "tmp/visual_baseline/20260302_204524/case2_reg/1772473858066_field-dept_code_pass-loc1_stage-tsv_mode-digits_x2675_y989_w302_h70_after.png",
+  "overlay": "tmp/visual_baseline/20260302_204524/case2_reg/1772473858066_field-dept_code_pass-loc1_stage-tsv_mode-digits_x2675_y989_w302_h70_overlay.png"
+}

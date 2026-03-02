@@ -1,0 +1,78 @@
+{
+  "zonesByPercent": {
+    "fio_zone_1": {
+      "leftR": 0.08,
+      "topR": 0.39,
+      "rightR": 0.8,
+      "bottomR": 0.44
+    },
+    "fio_zone_2": {
+      "leftR": 0.08,
+      "topR": 0.42,
+      "rightR": 0.8,
+      "bottomR": 0.47
+    },
+    "fio_zone_3": {
+      "leftR": 0.08,
+      "topR": 0.45,
+      "rightR": 0.8,
+      "bottomR": 0.5
+    },
+    "issued_zone_1": {
+      "leftR": 0.4,
+      "topR": 0.32,
+      "rightR": 0.98,
+      "bottomR": 0.4
+    },
+    "issued_zone_2": {
+      "leftR": 0.4,
+      "topR": 0.35,
+      "rightR": 0.98,
+      "bottomR": 0.43
+    },
+    "issued_zone_3": {
+      "leftR": 0.4,
+      "topR": 0.38,
+      "rightR": 0.98,
+      "bottomR": 0.46
+    }
+  },
+  "zonesByPixels": {
+    "fio_zone_1": {
+      "left": 217,
+      "top": 1463,
+      "width": 1954,
+      "height": 187
+    },
+    "fio_zone_2": {
+      "left": 217,
+      "top": 1575,
+      "width": 1954,
+      "height": 188
+    },
+    "fio_zone_3": {
+      "left": 217,
+      "top": 1688,
+      "width": 1954,
+      "height": 187
+    },
+    "issued_zone_1": {
+      "left": 1086,
+      "top": 1200,
+      "width": 1574,
+      "height": 300
+    },
+    "issued_zone_2": {
+      "left": 1086,
+      "top": 1313,
+      "width": 1574,
+      "height": 300
+    },
+    "issued_zone_3": {
+      "left": 1086,
+      "top": 1425,
+      "width": 1574,
+      "height": 300
+    }
+  }
+}

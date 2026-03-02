@@ -1,0 +1,19 @@
+{
+  "field": "registration",
+  "passId": "C_x0_y0_psm6",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 222,
+    "y": 2959,
+    "width": 2335,
+    "height": 607,
+    "page": 0
+  },
+  "psmList": [
+    6
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-23-46-229Z/passport/1772476058005_field-registration_pass-C_x0_y0_psm6_stage-tsv_mode-text_x222_y2959_w2335_h607_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-23-46-229Z/passport/1772476058005_field-registration_pass-C_x0_y0_psm6_stage-tsv_mode-text_x222_y2959_w2335_h607_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-23-46-229Z/passport/1772476058005_field-registration_pass-C_x0_y0_psm6_stage-tsv_mode-text_x222_y2959_w2335_h607_overlay.png"
+}

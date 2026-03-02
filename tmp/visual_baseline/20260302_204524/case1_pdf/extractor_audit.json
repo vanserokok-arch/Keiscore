@@ -1,0 +1,43 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "РОСС",
+    "ВЫДАН",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ОТЧЕСТВО",
+    "ПОЛ"
+  ],
+  "fallbackUsed": false,
+  "fields": {
+    "passport_number": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "9"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": ""
+    },
+    "fio": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "У О И С А АИ ЛЬ С М А-А - ОЙ АО Ы ГУ О Й У ПЕННЫЕ ЕЕК Р ФИ - К Й АНДА ЧЧОАПИСЬ А Т Р СЕ ЫИЕНЫЫ Р НЫ АННЫ ИЕ ПО ЧТ ИН В Ы"
+    },
+    "issued_by": {
+      "roiSource": "anchor",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": ", БЫ И НИНА, Л 1. П ОБНБЕТОКНИЬ О Е ЕН НИ НИНЕ НН ПНИ ОГНИ НН НА ПАЦЫРО ЛАЯ УЕ Е МИН НЕ НЕННЫ И СЗ, ЗЫ 1 НУ НЕ ЗАЛ, ААЩА"
+    },
+    "registration": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "РМАЦ ВИВМТ ТВОУ АКТЕМ 7ЕУЯЕУТЗ"
+    }
+  }
+}

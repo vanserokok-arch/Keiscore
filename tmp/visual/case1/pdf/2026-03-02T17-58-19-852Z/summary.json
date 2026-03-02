@@ -1,0 +1,24 @@
+{
+  "caseId": "case1",
+  "kind": "pdf",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T17-58-19-852Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case1/pdf/passport.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case1/pdf/registration.pdf"
+  },
+  "confirmed": {
+    "fio": true,
+    "passport_number": true,
+    "issued_by": false,
+    "dept_code": true,
+    "registration": false
+  },
+  "confirmedCount": 3,
+  "passportFields": {
+    "fio": "АРТЕМ НАЦ ЮРЬЕВИЧ",
+    "passport_number": "4027 №190481",
+    "issued_by": null,
+    "dept_code": "092-006"
+  },
+  "registrationField": null
+}

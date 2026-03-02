@@ -1,0 +1,19 @@
+{
+  "field": "issued_by",
+  "passId": "C_x0_y0_psm4",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 377,
+    "y": 960,
+    "width": 1411,
+    "height": 900,
+    "page": 0
+  },
+  "psmList": [
+    4
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T18-01-47-614Z/passport/1772474543330_field-issued_by_pass-C_x0_y0_psm4_stage-tsv_mode-text_x377_y960_w1411_h900_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T18-01-47-614Z/passport/1772474543330_field-issued_by_pass-C_x0_y0_psm4_stage-tsv_mode-text_x377_y960_w1411_h900_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T18-01-47-614Z/passport/1772474543330_field-issued_by_pass-C_x0_y0_psm4_stage-tsv_mode-text_x377_y960_w1411_h900_overlay.png"
+}

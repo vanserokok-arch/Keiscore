@@ -1,0 +1,19 @@
+{
+  "field": "registration",
+  "passId": "B",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 294,
+    "y": 2139,
+    "width": 3088,
+    "height": 439,
+    "page": 0
+  },
+  "psmList": [
+    11
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-17-13-280Z/registration/1772475565857_field-registration_pass-B_stage-tsv_mode-text_x294_y2139_w3088_h439_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-17-13-280Z/registration/1772475565857_field-registration_pass-B_stage-tsv_mode-text_x294_y2139_w3088_h439_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-17-13-280Z/registration/1772475565857_field-registration_pass-B_stage-tsv_mode-text_x294_y2139_w3088_h439_overlay.png"
+}

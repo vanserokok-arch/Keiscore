@@ -1,0 +1,768 @@
+=== normalizer_audit ===
+[
+  {
+    "ts": 1772473816214,
+    "stage": "normalizer",
+    "level": "info",
+    "message": "PDF page range resolved.",
+    "data": {
+      "pageCount": 1,
+      "requestedRange": null,
+      "resolvedRange0based": {
+        "from": 0,
+        "to": 0
+      },
+      "pdftoppmRange1based": {
+        "f": 1,
+        "l": 1
+      }
+    }
+  }
+]
+=== normalized_pages ===
+{
+  "pdfPageRange": null,
+  "normalized_pages": [
+    {
+      "pageNumber": 0,
+      "width": 3828,
+      "height": 2855,
+      "hasImagePath": true
+    }
+  ]
+}
+=== extractor_anchor_audit ===
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": true
+}
+=== debug_roi_dir ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case1_reg"
+}
+=== debug_overlay ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case1_reg",
+  "normalized_page": "tmp/visual_baseline/20260302_204524/case1_reg/normalized_page.png",
+  "overlay_zones": "tmp/visual_baseline/20260302_204524/case1_reg/overlay_zones.png",
+  "crops": [
+    "tmp/visual_baseline/20260302_204524/case1_reg/fio_zone_1.png",
+    "tmp/visual_baseline/20260302_204524/case1_reg/fio_zone_2.png",
+    "tmp/visual_baseline/20260302_204524/case1_reg/fio_zone_3.png",
+    "tmp/visual_baseline/20260302_204524/case1_reg/issued_zone_1.png",
+    "tmp/visual_baseline/20260302_204524/case1_reg/issued_zone_2.png",
+    "tmp/visual_baseline/20260302_204524/case1_reg/issued_zone_3.png"
+  ]
+}
+=== normalization ===
+{
+  "crop_bbox": {
+    "x": 159,
+    "y": 280,
+    "width": 3828,
+    "height": 4942,
+    "page": 0
+  },
+  "content_bbox": {
+    "x": 159,
+    "y": 280,
+    "width": 3828,
+    "height": 4942,
+    "page": 0
+  },
+  "passport_bbox": {
+    "x": 0,
+    "y": 0,
+    "width": 3828,
+    "height": 2855,
+    "page": 0
+  },
+  "applied_padding": 44,
+  "final_size": {
+    "width": 3828,
+    "height": 2855
+  },
+  "rotation_deg": 0,
+  "deskew_angle_deg": -1.5,
+  "threshold": 135,
+  "threshold_strategy": "otsu",
+  "retry_count": 0,
+  "final_threshold": 135,
+  "used_invert": false,
+  "orientation_score": 2.5125,
+  "black_pixel_ratio": 0.0482,
+  "final_black_pixel_ratio": 0.0482
+}
+=== fields ===
+{
+  "field": "passport_number",
+  "roi": {
+    "x": 2478,
+    "y": 666,
+    "width": 1148,
+    "height": 81,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 92988,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "dept_code",
+  "roi": {
+    "x": 2573,
+    "y": 766,
+    "width": 248,
+    "height": 57,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 14136,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 7,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "fio",
+  "roi": {
+    "x": 306,
+    "y": 671,
+    "width": 2680,
+    "height": 143,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 383240,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "roi": {
+    "x": 1723,
+    "y": 971,
+    "width": 1991,
+    "height": 685,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 1363835,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0.6727733262500001,
+  "pass": true,
+  "validator_reason": null
+}
+{
+  "field": "registration",
+  "roi": {
+    "x": 306,
+    "y": 389,
+    "width": 3216,
+    "height": 2457,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 7901712,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+=== best_candidates ===
+=== fio_mrz_attempts ===
+[]
+{
+  "field": "fio",
+  "roiCandidate": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+  "mrzCandidate": "",
+  "similarityScore": null,
+  "chosen": {
+    "source": "roi",
+    "confidence": null,
+    "normalizedText": "",
+    "validatorPassed": false,
+    "finalFio": null
+  },
+  "nullReason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "candidate": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА",
+  "digitRatio": 0.0328,
+  "markersFound": [
+    "РОССИИ"
+  ],
+  "chosen": {
+    "source": "zonal_tsv",
+    "validatorPassed": true
+  }
+}
+=== field_debug_compact ===
+{
+  "fio": {
+    "source_counts": {
+      "roi": 1,
+      "mrz": 0,
+      "zonal_tsv": 0,
+      "page": 0
+    },
+    "top3": [
+      {
+        "raw_preview": "` $ 2] СВАО: => ВА\nм и НН О т. | ‚Ии-. ПАРГОЛОВО\n",
+        "normalized_preview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+        "confidence": 0.15,
+        "psm": 6,
+        "source": "roi",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": "` $ 2] СВАО: => ВА\nм и НН О т. | ‚Ии-. ПАРГОЛОВО\n",
+        "normalized_preview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+        "confidence": 0.15,
+        "psm": 6,
+        "source": "roi",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      }
+    ]
+  },
+  "issued_by": {
+    "source_counts": {
+      "roi": 0,
+      "mrz": 0,
+      "zonal_tsv": 2,
+      "page": 0
+    },
+    "top3": [
+      {
+        "raw_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+        "normalized_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+        "confidence": 0.6727733262500001,
+        "psm": 6,
+        "source": "zonal_tsv",
+        "validator_passed": true,
+        "rejection_reason": null
+      },
+      {
+        "raw_preview": "КВ. 27 273 ОТДРИИЕ ОБН УВД. СИИ П ОУ - РАЙОНУ Г. САНКТ-ПЕТЕРВУРРЬ Т. НАВИЕНОВАНИЕ ПОДРАЗДЕПЕНИ Я ПО ВОПРОСА 789-ОО6 ИНГР",
+        "normalized_preview": "КВ. 27 273 ОТДРИИЕ ОБН УВД. СИИ П ОУ - РАЙОНУ Г. САНКТ-ПЕТЕРВУРРЬ Т. НАВИЕНОВАНИЕ ПОДРАЗДЕПЕНИ Я ПО ВОПРОСА 789-ОО6 ИНГР",
+        "confidence": 0.35000000000000003,
+        "psm": 4,
+        "source": "zonal_tsv",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+        "normalized_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+        "confidence": 0.5227733262500001,
+        "psm": 6,
+        "source": "zonal_tsv",
+        "validator_passed": true,
+        "rejection_reason": null
+      }
+    ]
+  }
+}
+=== roi_bounds_audit ===
+{
+  "minX": 306,
+  "minY": 389,
+  "maxX": 3714,
+  "maxY": 2846
+}
+=== result ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА",
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0.6,
+  "quality_metrics": {
+    "blur_score": 0,
+    "contrast_score": 0,
+    "geometric_score": 0
+  },
+  "diagnostics": {
+    "normalization": {
+      "applied": true,
+      "selectedThreshold": 135,
+      "cropBbox": {
+        "x": 159,
+        "y": 280,
+        "width": 3828,
+        "height": 4942,
+        "page": 0
+      },
+      "content_bbox": {
+        "x": 159,
+        "y": 280,
+        "width": 3828,
+        "height": 4942,
+        "page": 0
+      },
+      "passport_bbox": {
+        "x": 0,
+        "y": 0,
+        "width": 3828,
+        "height": 2855,
+        "page": 0
+      },
+      "applied_padding": 44,
+      "final_size": {
+        "width": 3828,
+        "height": 2855
+      },
+      "rotationDeg": 0,
+      "orientationScore": 2.5125,
+      "deskewAngleDeg": -1.5,
+      "blackPixelRatio": 0.0482,
+      "thresholdStrategy": "otsu",
+      "retryCount": 0,
+      "usedInvert": false,
+      "finalThreshold": 135,
+      "finalBlackPixelRatio": 0.0482
+    },
+    "field_debug": {}
+  },
+  "field_reports": [
+    {
+      "field": "passport_number",
+      "roi": {
+        "x": 2478,
+        "y": 666,
+        "width": 1148,
+        "height": 81,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "x0_y0 2 44 5 -",
+          "normalized_preview": "2445",
+          "source": "zonal_tsv",
+          "confidence": 0.82,
+          "psm": 6
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "x0_y0 - 1-",
+          "normalized_preview": "1",
+          "source": "zonal_tsv",
+          "confidence": 0.7,
+          "psm": 7
+        },
+        {
+          "pass_id": "C",
+          "raw_text_preview": "x0_y0 2019 - -",
+          "normalized_preview": "2019",
+          "source": "zonal_tsv",
+          "confidence": 0.6,
+          "psm": 11
+        }
+      ],
+      "best_candidate_preview": "2445",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 3,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "2 44 5 -",
+            "normalized_preview": "2445",
+            "confidence": 0.82,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "- 1-",
+            "normalized_preview": "1",
+            "confidence": 0.7,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "2019 - -",
+            "normalized_preview": "2019",
+            "confidence": 0.6,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "dept_code",
+      "roi": {
+        "x": 2573,
+        "y": 766,
+        "width": 248,
+        "height": 57,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "424 3",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.34357605,
+          "psm": 7
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "2",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.1,
+          "psm": 7
+        },
+        {
+          "pass_id": "C",
+          "raw_text_preview": "4",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.1,
+          "psm": 7
+        }
+      ],
+      "best_candidate_preview": "",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 3,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "424 3",
+            "normalized_preview": "",
+            "confidence": 0.34357605,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "2",
+            "normalized_preview": "",
+            "confidence": 0.1,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "4",
+            "normalized_preview": "",
+            "confidence": 0.1,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "fio",
+      "roi": {
+        "x": 306,
+        "y": 671,
+        "width": 2680,
+        "height": 143,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "C",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "C",
+          "raw_text_preview": "` $ 2] СВАО: => ВА\nм и НН О т. | ‚Ии-. ПАРГОЛОВО\n",
+          "normalized_preview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+          "source": "roi",
+          "confidence": 0.15,
+          "psm": 6
+        }
+      ],
+      "best_candidate_preview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 1,
+          "mrz": 0,
+          "zonal_tsv": 0,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "` $ 2] СВАО: => ВА\nм и НН О т. | ‚Ии-. ПАРГОЛОВО\n",
+            "normalized_preview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+            "confidence": 0.15,
+            "psm": 6,
+            "source": "roi",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "` $ 2] СВАО: => ВА\nм и НН О т. | ‚Ии-. ПАРГОЛОВО\n",
+            "normalized_preview": "СВАО ВА М И НН О Т ИИ- ПАРГОЛОВО",
+            "confidence": 0.15,
+            "psm": 6,
+            "source": "roi",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "issued_by",
+      "roi": {
+        "x": 1723,
+        "y": 971,
+        "width": 1991,
+        "height": 685,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": true,
+      "pass_id": "B",
+      "confidence": 0.6727733262500001,
+      "validator_passed": true,
+      "rejection_reason": null,
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "КВ. 27 273 ОТДРИИЕ ОБН УВД. СИИ П ОУ - РАЙОНУ Г. САНКТ-ПЕТЕРВУРРЬ Т. НАВИЕНОВАНИЕ ПОДРАЗДЕПЕНИ Я ПО ВОПРОСА 789-ОО6 ИНГР",
+          "normalized_preview": "КВ. 27 273 ОТДРИИЕ ОБН УВД. СИИ П ОУ - РАЙОНУ Г. САНКТ-ПЕТЕРВУРРЬ Т. НАВИЕНОВАНИЕ ПОДРАЗДЕПЕНИ Я ПО ВОПРОСА 789-ОО6 ИНГР",
+          "source": "zonal_tsv",
+          "confidence": 0.2,
+          "psm": 4
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+          "normalized_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+          "source": "zonal_tsv",
+          "confidence": 0.5227733262500001,
+          "psm": 6
+        }
+      ],
+      "best_candidate_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+            "normalized_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+            "confidence": 0.6727733262500001,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": true,
+            "rejection_reason": null
+          },
+          {
+            "raw_preview": "КВ. 27 273 ОТДРИИЕ ОБН УВД. СИИ П ОУ - РАЙОНУ Г. САНКТ-ПЕТЕРВУРРЬ Т. НАВИЕНОВАНИЕ ПОДРАЗДЕПЕНИ Я ПО ВОПРОСА 789-ОО6 ИНГР",
+            "normalized_preview": "КВ. 27 273 ОТДРИИЕ ОБН УВД. СИИ П ОУ - РАЙОНУ Г. САНКТ-ПЕТЕРВУРРЬ Т. НАВИЕНОВАНИЕ ПОДРАЗДЕПЕНИ Я ПО ВОПРОСА 789-ОО6 ИНГР",
+            "confidence": 0.35000000000000003,
+            "psm": 4,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+            "normalized_preview": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ Е О . НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА Е",
+            "confidence": 0.5227733262500001,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": true,
+            "rejection_reason": null
+          }
+        ]
+      }
+    },
+    {
+      "field": "registration",
+      "roi": {
+        "x": 306,
+        "y": 389,
+        "width": 3216,
+        "height": 2457,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+          "normalized_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+          "source": "zonal_tsv",
+          "confidence": 0.6188639444444445,
+          "psm": 6
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "Г. САНКТ-ПЕТЕРБУРГ БУЛ, ЕДОРА АБРАМОВА УГ. САНКТ-ПЕ\"ЕРЕ",
+          "normalized_preview": "Г. САНКТ-ПЕТЕРБУРГ БУЛ, ЕДОРА АБРАМОВА УГ. САНКТ-ПЕ\"ЕРЕ",
+          "source": "zonal_tsv",
+          "confidence": 0.5618840355555555,
+          "psm": 11
+        }
+      ],
+      "best_candidate_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+            "normalized_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+            "confidence": 0.6188639444444445,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "Г. САНКТ-ПЕТЕРБУРГ БУЛ, ЕДОРА АБРАМОВА УГ. САНКТ-ПЕ\"ЕРЕ",
+            "normalized_preview": "Г. САНКТ-ПЕТЕРБУРГ БУЛ, ЕДОРА АБРАМОВА УГ. САНКТ-ПЕ\"ЕРЕ",
+            "confidence": 0.5618840355555555,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+            "normalized_preview": "И. РЫ НАВИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО ВОПРОСА",
+            "confidence": 0.6188639444444445,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: fio"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: passport_number"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: dept_code"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: registration"
+    },
+    {
+      "code": "REQUIRE_MANUAL_REVIEW",
+      "message": "Overall confidence is below manual-review threshold.",
+      "details": {
+        "confidence_score": 0.6
+      }
+    }
+  ]
+}
+=== final_fields ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": "СД ВН УНВД РОССИИ 1О ВОБОРГСКОМУ НАНИЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ 1О ВОПРОСА",
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0.6
+}

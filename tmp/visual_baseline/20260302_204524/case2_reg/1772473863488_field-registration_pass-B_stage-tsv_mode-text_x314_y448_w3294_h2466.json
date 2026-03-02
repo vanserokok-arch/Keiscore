@@ -1,0 +1,19 @@
+{
+  "field": "registration",
+  "passId": "B",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 314,
+    "y": 448,
+    "width": 3294,
+    "height": 2466,
+    "page": 0
+  },
+  "psmList": [
+    11
+  ],
+  "before": "tmp/visual_baseline/20260302_204524/case2_reg/1772473863488_field-registration_pass-B_stage-tsv_mode-text_x314_y448_w3294_h2466_before.png",
+  "after": "tmp/visual_baseline/20260302_204524/case2_reg/1772473863488_field-registration_pass-B_stage-tsv_mode-text_x314_y448_w3294_h2466_after.png",
+  "overlay": "tmp/visual_baseline/20260302_204524/case2_reg/1772473863488_field-registration_pass-B_stage-tsv_mode-text_x314_y448_w3294_h2466_overlay.png"
+}

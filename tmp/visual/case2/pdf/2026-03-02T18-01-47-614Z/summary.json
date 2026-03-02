@@ -1,0 +1,24 @@
+{
+  "caseId": "case2",
+  "kind": "pdf",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T18-01-47-614Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case2/pdf/passport.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case2/pdf/registration.pdf"
+  },
+  "confirmed": {
+    "fio": false,
+    "passport_number": true,
+    "issued_by": true,
+    "dept_code": true,
+    "registration": false
+  },
+  "confirmedCount": 3,
+  "passportFields": {
+    "fio": null,
+    "passport_number": "4026 №737728",
+    "issued_by": "Г. САНКТ-ПЕТЕРБУРГУУ ЛЕНИН) ОБЛАСТИ",
+    "dept_code": "270-219"
+  },
+  "registrationField": null
+}

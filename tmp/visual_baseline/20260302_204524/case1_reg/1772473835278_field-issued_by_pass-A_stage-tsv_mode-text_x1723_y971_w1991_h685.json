@@ -1,0 +1,19 @@
+{
+  "field": "issued_by",
+  "passId": "A",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 1723,
+    "y": 971,
+    "width": 1991,
+    "height": 685,
+    "page": 0
+  },
+  "psmList": [
+    4
+  ],
+  "before": "tmp/visual_baseline/20260302_204524/case1_reg/1772473835278_field-issued_by_pass-A_stage-tsv_mode-text_x1723_y971_w1991_h685_before.png",
+  "after": "tmp/visual_baseline/20260302_204524/case1_reg/1772473835278_field-issued_by_pass-A_stage-tsv_mode-text_x1723_y971_w1991_h685_after.png",
+  "overlay": "tmp/visual_baseline/20260302_204524/case1_reg/1772473835278_field-issued_by_pass-A_stage-tsv_mode-text_x1723_y971_w1991_h685_overlay.png"
+}

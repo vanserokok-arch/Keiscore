@@ -1,0 +1,43 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": ""
+    },
+    "dept_code": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "290-620"
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "А А О МУ -Я СП ЩЕ А"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ОПВЫ УМВА РОССИИ ПО КРАСНОГ ВАРДЕЙСКОНУ"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "УЛ. ДАНИИЛА ХАРМСА Д. ЗОК- 1 ЛИТЕРА А, КА. ОТДЕЛЕНИЕ (ПО ОФОРМЛЕНИЕ ВНУТРЕННИХ 18 ОТДЕЛЕНИЕ НТЕНИЮ ВНУТРЕННИХ"
+    }
+  }
+}

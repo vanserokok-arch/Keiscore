@@ -1,0 +1,19 @@
+{
+  "field": "fio",
+  "passId": "A",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 314,
+    "y": 860,
+    "width": 2745,
+    "height": 58,
+    "page": 0
+  },
+  "psmList": [
+    6
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474797159/registration/1772474850393_field-fio_pass-A_stage-tsv_mode-text_x314_y860_w2745_h58_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474797159/registration/1772474850393_field-fio_pass-A_stage-tsv_mode-text_x314_y860_w2745_h58_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474797159/registration/1772474850393_field-fio_pass-A_stage-tsv_mode-text_x314_y860_w2745_h58_overlay.png"
+}

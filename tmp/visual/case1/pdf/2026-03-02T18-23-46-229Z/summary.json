@@ -1,0 +1,24 @@
+{
+  "caseId": "case1",
+  "kind": "pdf",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T18-23-46-229Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case1/pdf/passport.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case1/pdf/registration.pdf"
+  },
+  "confirmed": {
+    "fio": true,
+    "passport_number": true,
+    "issued_by": true,
+    "dept_code": true,
+    "registration": true
+  },
+  "confirmedCount": 5,
+  "passportFields": {
+    "fio": "АРТЕМ НАЦ ЮРЬЕВИЧ",
+    "passport_number": "4027 №190481",
+    "issued_by": "ГУ МВД РОССИИ ПО",
+    "dept_code": "092-006"
+  },
+  "registrationField": "Г. САНКТ-ПЕТЕР УРГ ИВД РОССИИ ПО ВЫБО РГСКОНУ НАИМЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО 8О"
+}

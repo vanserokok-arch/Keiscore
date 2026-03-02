@@ -1,0 +1,19 @@
+{
+  "field": "fio",
+  "passId": "C",
+  "stage": "plain",
+  "mode": "text",
+  "roi": {
+    "x": 489,
+    "y": 1350,
+    "width": 1900,
+    "height": 750,
+    "page": 0
+  },
+  "psmList": [
+    6
+  ],
+  "before": "tmp/visual_baseline/20260302_204524/case1_pdf/1772473564052_field-fio_pass-C_stage-plain_mode-text_x489_y1350_w1900_h750_before.png",
+  "after": "tmp/visual_baseline/20260302_204524/case1_pdf/1772473564052_field-fio_pass-C_stage-plain_mode-text_x489_y1350_w1900_h750_after.png",
+  "overlay": "tmp/visual_baseline/20260302_204524/case1_pdf/1772473564052_field-fio_pass-C_stage-plain_mode-text_x489_y1350_w1900_h750_overlay.png"
+}

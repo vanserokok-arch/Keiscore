@@ -26,5 +26,6 @@ export type UiRunResult = {
         convertedPdfPath: string | null;
     }>;
     debugDir: string | null;
+    artifactPaths: string[];
 };
 export declare function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownError: unknown | null): UiRunResult;

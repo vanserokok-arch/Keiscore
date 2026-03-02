@@ -1,0 +1,44 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН",
+    "ПОДРАЗД"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": ""
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "780-005"
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "ХАНОН МЫ ПУНКТ ПН ПАРГОЛОВО"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "2 ОТДЕПЕНИЕ ОВ УМВД РОССИИ ПО ВЫБОРГСКОМУ - РАЙОНУ Г. САНКТ-ПЕТЕРБУРГА"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ВЫБО РГСКОНУ НАИМЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ ПО 8О"
+    }
+  }
+}

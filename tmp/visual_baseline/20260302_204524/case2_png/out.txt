@@ -1,0 +1,275 @@
+=== normalized_pages ===
+{
+  "pdfPageRange": null,
+  "normalized_pages": [
+    {
+      "pageNumber": 0,
+      "width": 1740,
+      "height": 2404,
+      "hasImagePath": false
+    }
+  ]
+}
+=== debug_roi_dir ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case2_png"
+}
+=== fields ===
+{
+  "field": "fio",
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": null,
+  "clampApplied": null,
+  "roi_area": 0,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": null,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "passport_number",
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": null,
+  "clampApplied": null,
+  "roi_area": 0,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": null,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": null,
+  "clampApplied": null,
+  "roi_area": 0,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": null,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "dept_code",
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": null,
+  "clampApplied": null,
+  "roi_area": 0,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": null,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "registration",
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "width": 0,
+    "height": 0,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": null,
+  "clampApplied": null,
+  "roi_area": 0,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": null,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+=== best_candidates ===
+=== fio_mrz_attempts ===
+[]
+{
+  "field": "fio",
+  "roiCandidate": "",
+  "mrzCandidate": "",
+  "similarityScore": null,
+  "chosen": {
+    "source": "roi",
+    "confidence": null,
+    "normalizedText": "",
+    "validatorPassed": false,
+    "finalFio": null
+  },
+  "nullReason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "candidate": "",
+  "digitRatio": 0,
+  "markersFound": [],
+  "chosen": {
+    "source": "roi",
+    "validatorPassed": false
+  }
+}
+=== result ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": null,
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0,
+  "quality_metrics": {
+    "blur_score": 0,
+    "contrast_score": 0,
+    "geometric_score": 0
+  },
+  "field_reports": [
+    {
+      "field": "fio",
+      "roi": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "page": 0
+      },
+      "engine_used": "none",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0,
+      "attempts": [],
+      "best_candidate_preview": "",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": ""
+    },
+    {
+      "field": "passport_number",
+      "roi": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "page": 0
+      },
+      "engine_used": "none",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0,
+      "attempts": [],
+      "best_candidate_preview": "",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": ""
+    },
+    {
+      "field": "issued_by",
+      "roi": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "page": 0
+      },
+      "engine_used": "none",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0,
+      "attempts": [],
+      "best_candidate_preview": "",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": ""
+    },
+    {
+      "field": "dept_code",
+      "roi": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "page": 0
+      },
+      "engine_used": "none",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0,
+      "attempts": [],
+      "best_candidate_preview": "",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": ""
+    },
+    {
+      "field": "registration",
+      "roi": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "page": 0
+      },
+      "engine_used": "none",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0,
+      "attempts": [],
+      "best_candidate_preview": "",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": ""
+    }
+  ],
+  "errors": [
+    {
+      "code": "INTERNAL_ERROR",
+      "message": "Normalized page image is missing."
+    }
+  ]
+}
+=== final_fields ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": null,
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0
+}

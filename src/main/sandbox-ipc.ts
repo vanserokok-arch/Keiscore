@@ -250,15 +250,18 @@ type SourceRuntimeInput = {
 };
 
 async function convertPngToSinglePagePdf(inputPath: string): Promise<string> {
+  const SOURCE_DPI = 300;
   const pngBytes = await readFile(inputPath);
   const pdfDoc = await PDFDocument.create();
   const embeddedPng = await pdfDoc.embedPng(pngBytes);
-  const page = pdfDoc.addPage([embeddedPng.width, embeddedPng.height]);
+  const pageWidthPt = (embeddedPng.width * 72) / SOURCE_DPI;
+  const pageHeightPt = (embeddedPng.height * 72) / SOURCE_DPI;
+  const page = pdfDoc.addPage([pageWidthPt, pageHeightPt]);
   page.drawImage(embeddedPng, {
     x: 0,
     y: 0,
-    width: embeddedPng.width,
-    height: embeddedPng.height
+    width: pageWidthPt,
+    height: pageHeightPt
   });
   const pdfBytes = await pdfDoc.save();
   const tempDir = await mkdtemp(join(tmpdir(), "keiscore-fixtures-"));

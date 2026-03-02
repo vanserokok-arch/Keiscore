@@ -1,0 +1,48 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "РОСС",
+    "ВЫДАН",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ФАМИЛИЯ",
+    "ОТЧЕСТВО",
+    "ФАМИЛИЯ",
+    "ИМЯ",
+    "ПОДРАЗД",
+    "ОТЧЕСТВО",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": false,
+  "fields": {
+    "passport_number": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "4027190481"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "780-006"
+    },
+    "fio": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "АХА УРМИСТРО Р ФАМИЛИЯ НАЕ АЕННИ БУРМИСТРО У БЕК С НЫ РР ЕРРИИЧ"
+    },
+    "issued_by": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ГУ МВД РОССИИ ПО"
+    },
+    "registration": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "Г.САНКТ-ПЕТЕРБУРГУ И ЛЕНИНГРАДСКОЙ Г.САНКТ-ПЕТЕРБУРГУ И ЛЕНИНГРАДСКОЙ О ДАТА ВЫДАЧИ О 2 ПОДРАЗДЕЛЕНИЯ 78О- ОО6"
+    }
+  }
+}

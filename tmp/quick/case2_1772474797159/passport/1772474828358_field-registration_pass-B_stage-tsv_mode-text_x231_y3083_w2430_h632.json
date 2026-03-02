@@ -1,0 +1,19 @@
+{
+  "field": "registration",
+  "passId": "B",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 231,
+    "y": 3083,
+    "width": 2430,
+    "height": 632,
+    "page": 0
+  },
+  "psmList": [
+    11
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474797159/passport/1772474828358_field-registration_pass-B_stage-tsv_mode-text_x231_y3083_w2430_h632_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474797159/passport/1772474828358_field-registration_pass-B_stage-tsv_mode-text_x231_y3083_w2430_h632_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/quick/case2_1772474797159/passport/1772474828358_field-registration_pass-B_stage-tsv_mode-text_x231_y3083_w2430_h632_overlay.png"
+}

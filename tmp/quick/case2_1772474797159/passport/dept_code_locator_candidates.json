@@ -1,0 +1,426 @@
+{
+  "total": 42,
+  "selectedTop": 6,
+  "candidates": [
+    {
+      "roi": {
+        "x": 1598,
+        "y": 1054,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.049267
+    },
+    {
+      "roi": {
+        "x": 1598,
+        "y": 1064,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.043864
+    },
+    {
+      "roi": {
+        "x": 1598,
+        "y": 1072,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.049451
+    },
+    {
+      "roi": {
+        "x": 1598,
+        "y": 1080,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.064744
+    },
+    {
+      "roi": {
+        "x": 1598,
+        "y": 1090,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.096978
+    },
+    {
+      "roi": {
+        "x": 1614,
+        "y": 1054,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.045147
+    },
+    {
+      "roi": {
+        "x": 1614,
+        "y": 1064,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.03956
+    },
+    {
+      "roi": {
+        "x": 1614,
+        "y": 1072,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.04533
+    },
+    {
+      "roi": {
+        "x": 1614,
+        "y": 1080,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.062363
+    },
+    {
+      "roi": {
+        "x": 1614,
+        "y": 1090,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.097527
+    },
+    {
+      "roi": {
+        "x": 1630,
+        "y": 1054,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.041392
+    },
+    {
+      "roi": {
+        "x": 1630,
+        "y": 1064,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.038004
+    },
+    {
+      "roi": {
+        "x": 1630,
+        "y": 1072,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.042857
+    },
+    {
+      "roi": {
+        "x": 1630,
+        "y": 1080,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.058333
+    },
+    {
+      "roi": {
+        "x": 1630,
+        "y": 1090,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.094231
+    },
+    {
+      "roi": {
+        "x": 1654,
+        "y": 1054,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.039377
+    },
+    {
+      "roi": {
+        "x": 1654,
+        "y": 1064,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.036081
+    },
+    {
+      "roi": {
+        "x": 1654,
+        "y": 1072,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.037546
+    },
+    {
+      "roi": {
+        "x": 1654,
+        "y": 1080,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.046612
+    },
+    {
+      "roi": {
+        "x": 1654,
+        "y": 1090,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.081502
+    },
+    {
+      "roi": {
+        "x": 1686,
+        "y": 1054,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.031227
+    },
+    {
+      "roi": {
+        "x": 1686,
+        "y": 1064,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.029487
+    },
+    {
+      "roi": {
+        "x": 1686,
+        "y": 1072,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.028022
+    },
+    {
+      "roi": {
+        "x": 1686,
+        "y": 1080,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.048168
+    },
+    {
+      "roi": {
+        "x": 1686,
+        "y": 1090,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.071062
+    },
+    {
+      "roi": {
+        "x": 1718,
+        "y": 1054,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.027106
+    },
+    {
+      "roi": {
+        "x": 1718,
+        "y": 1064,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.027656
+    },
+    {
+      "roi": {
+        "x": 1718,
+        "y": 1072,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.026099
+    },
+    {
+      "roi": {
+        "x": 1718,
+        "y": 1080,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.035806
+    },
+    {
+      "roi": {
+        "x": 1718,
+        "y": 1090,
+        "width": 260,
+        "height": 42,
+        "page": 0
+      },
+      "inkScore": 0.069139
+    },
+    {
+      "roi": {
+        "x": 1294,
+        "y": 1116,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.098949
+    },
+    {
+      "roi": {
+        "x": 1294,
+        "y": 1124,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.091498
+    },
+    {
+      "roi": {
+        "x": 1294,
+        "y": 1132,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.099765
+    },
+    {
+      "roi": {
+        "x": 1294,
+        "y": 1140,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.110022
+    },
+    {
+      "roi": {
+        "x": 1324,
+        "y": 1116,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.09604
+    },
+    {
+      "roi": {
+        "x": 1324,
+        "y": 1124,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.082976
+    },
+    {
+      "roi": {
+        "x": 1324,
+        "y": 1132,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.087722
+    },
+    {
+      "roi": {
+        "x": 1324,
+        "y": 1140,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.096244
+    },
+    {
+      "roi": {
+        "x": 1354,
+        "y": 1116,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.094458
+    },
+    {
+      "roi": {
+        "x": 1354,
+        "y": 1124,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.076138
+    },
+    {
+      "roi": {
+        "x": 1354,
+        "y": 1132,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.078485
+    },
+    {
+      "roi": {
+        "x": 1354,
+        "y": 1140,
+        "width": 426,
+        "height": 46,
+        "page": 0
+      },
+      "inkScore": 0.086957
+    }
+  ]
+}

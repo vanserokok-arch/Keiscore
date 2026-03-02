@@ -1,0 +1,43 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": ""
+    },
+    "dept_code": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": ""
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": ""
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "О КРАСН ВАД СК Я ПО ВОПРО Ы"
+    }
+  }
+}

@@ -165,10 +165,20 @@ export const ExtractionResultSchema = z.object({
             deskewAngleDeg: z.number(),
             blackPixelRatio: z.number(),
             thresholdStrategy: z.string().optional(),
+            safeMode: z.boolean().optional(),
             retryCount: z.number().int().nonnegative().optional(),
             usedInvert: z.boolean().optional(),
             finalThreshold: z.number().optional(),
-            finalBlackPixelRatio: z.number().optional()
+            finalBlackPixelRatio: z.number().optional(),
+            page_for_search_path: z.string().optional(),
+            page_for_search_metrics: z
+                .object({
+                contrastScore: z.number(),
+                blackPixelRatio: z.number(),
+                anchorsDetected: z.number(),
+                patternCandidatesDetected: z.number()
+            })
+                .optional()
         })
             .optional(),
         field_debug: z

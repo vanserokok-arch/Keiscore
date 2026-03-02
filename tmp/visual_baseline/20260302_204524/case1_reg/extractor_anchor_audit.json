@@ -1,0 +1,12 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": true,
+  "deptCodeAnchorBox": null
+}

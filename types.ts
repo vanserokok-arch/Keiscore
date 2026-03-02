@@ -231,10 +231,18 @@ export interface NormalizedInput {
     deskewAngleDeg: number;
     blackPixelRatio: number;
     thresholdStrategy?: string;
+    safeMode?: boolean;
     retryCount?: number;
     usedInvert?: boolean;
     finalThreshold?: number;
     finalBlackPixelRatio?: number;
+    page_for_search_path?: string;
+    page_for_search_metrics?: {
+      contrastScore: number;
+      blackPixelRatio: number;
+      anchorsDetected: number;
+      patternCandidatesDetected: number;
+    };
   };
   mockLayout?: MockDocumentLayout;
 }
@@ -493,10 +501,20 @@ export const ExtractionResultSchema = z.object({
           deskewAngleDeg: z.number(),
           blackPixelRatio: z.number(),
           thresholdStrategy: z.string().optional(),
+          safeMode: z.boolean().optional(),
           retryCount: z.number().int().nonnegative().optional(),
           usedInvert: z.boolean().optional(),
           finalThreshold: z.number().optional(),
-          finalBlackPixelRatio: z.number().optional()
+          finalBlackPixelRatio: z.number().optional(),
+          page_for_search_path: z.string().optional(),
+          page_for_search_metrics: z
+            .object({
+              contrastScore: z.number(),
+              blackPixelRatio: z.number(),
+              anchorsDetected: z.number(),
+              patternCandidatesDetected: z.number()
+            })
+            .optional()
         })
         .optional(),
       field_debug: z

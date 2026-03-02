@@ -1,0 +1,24 @@
+{
+  "caseId": "case2",
+  "kind": "png",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-17-13-280Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-17-13-280Z/passport.from-png.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T18-17-13-280Z/registration.from-png.pdf"
+  },
+  "confirmed": {
+    "fio": true,
+    "passport_number": true,
+    "issued_by": true,
+    "dept_code": true,
+    "registration": true
+  },
+  "confirmedCount": 5,
+  "passportFields": {
+    "fio": "РОМАН ОТО СЕРГЕЕВИЧ",
+    "passport_number": "5303 №202422",
+    "issued_by": "Р. САНКТ-ПЕТЕРБУРГУУ ЛЕНИН ОБЛАСТИ",
+    "dept_code": "270-219"
+  },
+  "registrationField": "ЗАРЕГИСТРИРОВАН ТЕ 29.О6.2О21 К. ЛИТЕРА А, КВ. О9 ОТДЕЛЕНИЕ (ПО ОФОРИПЕНИЮ ВНУТРЕННИХ ПАСПОРТОВ РЕГИСТРАЦИИ РАН ОПВМ УНВД РОССИИ ПО КРАСН ГВАРДЕЙСКОНУ (НАВМЕНОВАННЕ ПВН СЯ ПО ВОПРОБАИ ИНГРАЦИИ ДА ЗАВЕРИЛ ОИ"
+}

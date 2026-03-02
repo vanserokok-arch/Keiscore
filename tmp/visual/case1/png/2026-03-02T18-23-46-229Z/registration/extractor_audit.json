@@ -1,0 +1,44 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН",
+    "ПОДРАЗД"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "1"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "780-006"
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "ЯВЦА УЛ ФЕДОРА АЕ Е П Л ГУ"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "УНВД РОС ОТДЕЛЕНИЕ ОВН УНВД РОССИИ 1О ВЫБОРГСКОМУ"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "Г. САНКТ-ПЕТ П. ПАРГОЛОВО ПУНКТ Ц. ПАРГОЛОВО УЛИЦА УЛ. ФЕДОРА АБРАМОВА ОТДЕЛЕНИЕ ОВН УНВД РОССИИ 1О ВЫБОРГСКОМУ"
+    }
+  }
+}

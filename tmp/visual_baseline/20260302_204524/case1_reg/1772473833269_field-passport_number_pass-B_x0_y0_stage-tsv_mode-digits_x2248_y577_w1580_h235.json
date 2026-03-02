@@ -1,0 +1,20 @@
+{
+  "field": "passport_number",
+  "passId": "B_x0_y0",
+  "stage": "tsv",
+  "mode": "digits",
+  "roi": {
+    "x": 2248,
+    "y": 577,
+    "width": 1580,
+    "height": 235,
+    "page": 0
+  },
+  "psmList": [
+    7,
+    6
+  ],
+  "before": "tmp/visual_baseline/20260302_204524/case1_reg/1772473833269_field-passport_number_pass-B_x0_y0_stage-tsv_mode-digits_x2248_y577_w1580_h235_before.png",
+  "after": "tmp/visual_baseline/20260302_204524/case1_reg/1772473833269_field-passport_number_pass-B_x0_y0_stage-tsv_mode-digits_x2248_y577_w1580_h235_after.png",
+  "overlay": "tmp/visual_baseline/20260302_204524/case1_reg/1772473833269_field-passport_number_pass-B_x0_y0_stage-tsv_mode-digits_x2248_y577_w1580_h235_overlay.png"
+}

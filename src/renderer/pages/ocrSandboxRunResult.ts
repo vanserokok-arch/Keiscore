@@ -29,6 +29,7 @@ export type UiRunResult = {
     convertedPdfPath: string | null;
   }>;
   debugDir: string | null;
+  artifactPaths: string[];
 };
 
 function normalizeThrownError(error: unknown): SandboxError {
@@ -65,7 +66,8 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
       fieldRows: [],
       normalizationRows: [],
       sourceRows: [],
-      debugDir: null
+      debugDir: null,
+      artifactPaths: []
     };
   }
 
@@ -76,7 +78,8 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
       fieldRows: [],
       normalizationRows: [],
       sourceRows: [],
-      debugDir: null
+      debugDir: null,
+      artifactPaths: []
     };
   }
 
@@ -87,7 +90,8 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
       fieldRows: [],
       normalizationRows: [],
       sourceRows: [],
-      debugDir: null
+      debugDir: null,
+      artifactPaths: []
     };
   }
 
@@ -170,12 +174,26 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
     });
   }
 
+  const artifactPaths: string[] = [];
+  if (data.debugDir) {
+    const root = data.debugDir.endsWith("/") ? data.debugDir.slice(0, -1) : data.debugDir;
+    const sourceDirs = [`${root}/passport`, `${root}/registration`];
+    for (const dir of sourceDirs) {
+      artifactPaths.push(`${dir}/page_for_search.png`);
+      artifactPaths.push(`${dir}/overlay_anchors.png`);
+      artifactPaths.push(`${dir}/overlay_candidates.png`);
+      artifactPaths.push(`${dir}/extractor_anchor_audit.json`);
+      artifactPaths.push(`${dir}/extractor_audit.json`);
+    }
+  }
+
   return {
     rawJson: JSON.stringify(lastResult, null, 2),
     errors: data.errors ?? [],
     fieldRows,
     normalizationRows,
     sourceRows,
-    debugDir: data.debugDir
+    debugDir: data.debugDir,
+    artifactPaths
   };
 }

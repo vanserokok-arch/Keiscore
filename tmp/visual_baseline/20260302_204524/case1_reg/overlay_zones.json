@@ -1,0 +1,78 @@
+{
+  "zonesByPercent": {
+    "fio_zone_1": {
+      "leftR": 0.08,
+      "topR": 0.39,
+      "rightR": 0.8,
+      "bottomR": 0.44
+    },
+    "fio_zone_2": {
+      "leftR": 0.08,
+      "topR": 0.42,
+      "rightR": 0.8,
+      "bottomR": 0.47
+    },
+    "fio_zone_3": {
+      "leftR": 0.08,
+      "topR": 0.45,
+      "rightR": 0.8,
+      "bottomR": 0.5
+    },
+    "issued_zone_1": {
+      "leftR": 0.4,
+      "topR": 0.32,
+      "rightR": 0.98,
+      "bottomR": 0.4
+    },
+    "issued_zone_2": {
+      "leftR": 0.4,
+      "topR": 0.35,
+      "rightR": 0.98,
+      "bottomR": 0.43
+    },
+    "issued_zone_3": {
+      "leftR": 0.4,
+      "topR": 0.38,
+      "rightR": 0.98,
+      "bottomR": 0.46
+    }
+  },
+  "zonesByPixels": {
+    "fio_zone_1": {
+      "left": 306,
+      "top": 1113,
+      "width": 2756,
+      "height": 143
+    },
+    "fio_zone_2": {
+      "left": 306,
+      "top": 1199,
+      "width": 2756,
+      "height": 143
+    },
+    "fio_zone_3": {
+      "left": 306,
+      "top": 1285,
+      "width": 2756,
+      "height": 143
+    },
+    "issued_zone_1": {
+      "left": 1531,
+      "top": 914,
+      "width": 2220,
+      "height": 228
+    },
+    "issued_zone_2": {
+      "left": 1531,
+      "top": 999,
+      "width": 2220,
+      "height": 229
+    },
+    "issued_zone_3": {
+      "left": 1531,
+      "top": 1085,
+      "width": 2220,
+      "height": 228
+    }
+  }
+}

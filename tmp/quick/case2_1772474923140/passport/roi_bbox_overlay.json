@@ -1,0 +1,41 @@
+{
+  "width": 2893,
+  "height": 3952,
+  "rois": {
+    "fio": {
+      "x": 598,
+      "y": 2048,
+      "width": 2025,
+      "height": 520,
+      "page": 0
+    },
+    "passport_number": {
+      "x": 227,
+      "y": 3406,
+      "width": 2413,
+      "height": 191,
+      "page": 0
+    },
+    "issued_by": {
+      "x": 615,
+      "y": 672,
+      "width": 1504,
+      "height": 948,
+      "page": 0
+    },
+    "dept_code": {
+      "x": 1810,
+      "y": 2775,
+      "width": 612,
+      "height": 112,
+      "page": 0
+    },
+    "registration": {
+      "x": 231,
+      "y": 3083,
+      "width": 2430,
+      "height": 632,
+      "page": 0
+    }
+  }
+}

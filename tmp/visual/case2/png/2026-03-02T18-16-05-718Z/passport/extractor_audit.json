@@ -1,0 +1,45 @@
+{
+  "anchorsFoundCount": 4,
+  "anchorKeys": [
+    "ВЫДАН",
+    "РОСС",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "ПОДРАЗД",
+    "ВЫДАН",
+    "ОТЧЕСТВО"
+  ],
+  "fallbackUsed": false,
+  "fields": {
+    "passport_number": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "5303202422"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "270-219"
+    },
+    "fio": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "РОМАН ОТО СЕРГЕЕВИЧ"
+    },
+    "issued_by": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "Р. САНКТ-ПЕТЕРБУРГУУ И ЛЕНИН ОБЛАСТИ"
+    },
+    "registration": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "АВА ВЫ ЗЫ Г 1 ШИ ВИ Г РМЕО МА ОВОУ ВОМАМ ЗЕВСЕЕУТ 3 ОКК 4О2673772881579О2273М 324О31378ОО8 24 ИИ"
+    }
+  }
+}

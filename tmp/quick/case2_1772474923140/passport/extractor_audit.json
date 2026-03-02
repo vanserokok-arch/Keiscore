@@ -1,0 +1,46 @@
+{
+  "anchorsFoundCount": 4,
+  "anchorKeys": [
+    "ВЫДАН",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ФАМИЛИЯ",
+    "ВЫДАН",
+    "ИМЯ",
+    "ПОДРАЗД"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "4026737728"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "270-219"
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "ФАМИЛИЯ МАЙОР ОВ Р А РЫ ОЕ ИЦЕА"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "Г. САНКТ-ПЕТЕРБУРГУУ И ЛЕНИН) ОБЛАСТИ"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ТОК, ПРО А ЗОН ПАО ЧО. О Д 3 РМЕО МАЧОВО ВОМАМ ЕРСЕЕЧТ 3 ОККСХ 4О2673772881579О2273М 324О31378ОО8 24 . У ИНИНИИ"
+    }
+  }
+}

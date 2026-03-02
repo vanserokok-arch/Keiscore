@@ -14,7 +14,9 @@ import {
   validateFio,
   validateIssuedBy,
   validatePassportNumber,
-  validateRegistration
+  validateRegistration,
+  parseMrzLatinFio,
+  transliterateMrzLatinToCyrillic
 } from "../validators/passportValidators.js";
 import {
   ExtractionResultSchema,
@@ -723,6 +725,46 @@ function buildGridSweeps(
   return out;
 }
 
+function buildOffsetsRange(maxAbs: number, step: number): number[] {
+  const out: number[] = [];
+  for (let value = -maxAbs; value <= maxAbs; value += step) {
+    out.push(value);
+  }
+  out.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
+  return out;
+}
+
+function buildProblemFieldSweeps(
+  base: RoiRect,
+  pageWidth: number,
+  pageHeight: number,
+  maxAbs = 120,
+  step = 20,
+  cap = 30
+): Array<{ roi: RoiRect; sweep: string }> {
+  const offsetsX = buildOffsetsRange(maxAbs, step);
+  const offsetsY = buildOffsetsRange(maxAbs, step);
+  return buildGridSweeps(base, pageWidth, pageHeight, offsetsX, offsetsY)
+    .sort((a, b) => {
+      const [axRaw, ayRaw] = a.sweep
+        .replace(/^x/u, "")
+        .split("_y")
+        .map((n) => Number(n));
+      const [bxRaw, byRaw] = b.sweep
+        .replace(/^x/u, "")
+        .split("_y")
+        .map((n) => Number(n));
+      const ax = Number(axRaw ?? 0);
+      const ay = Number(ayRaw ?? 0);
+      const bx = Number(bxRaw ?? 0);
+      const by = Number(byRaw ?? 0);
+      const da = Math.abs(ax) + Math.abs(ay);
+      const db = Math.abs(bx) + Math.abs(by);
+      return da - db;
+    })
+    .slice(0, cap);
+}
+
 function pickAnchorBoxByKey(anchorBoxes: Record<string, AnchorBox> | undefined, needle: string): AnchorBox | undefined {
   if (anchorBoxes === undefined) return undefined;
   const key = Object.keys(anchorBoxes).find((item) => item.includes(needle));
@@ -829,15 +871,29 @@ async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | 
     await sharp(inPath)
       .grayscale()
       .normalize()
-      .linear(1.08, -8)
-      .sharpen(0.45, 0.8, 0.8)
+      .linear(1.06, -5)
+      .sharpen(0.38, 0.75, 0.75)
       .png({ compressionLevel: 9 })
       .toFile(outPath);
     return;
   }
-  const img = sharp(inPath).grayscale();
-  const thr = mode === "digits" ? 205 : 220;
-  await img.normalize().median(1).threshold(thr).png({ compressionLevel: 9 }).toFile(outPath);
+  if (mode === "digits") {
+    await sharp(inPath)
+      .grayscale()
+      .normalize()
+      .median(1)
+      .threshold(205)
+      .sharpen(0.42, 0.75, 0.75)
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    return;
+  }
+  await sharp(inPath)
+    .grayscale()
+    .normalize()
+    .sharpen(0.34, 0.75, 0.75)
+    .png({ compressionLevel: 9 })
+    .toFile(outPath);
 }
 
 async function saveRoiPassDebugArtifacts(params: {
@@ -1162,7 +1218,7 @@ function pickRegistrationCandidate(lines: Array<{ text: string; avgConf: number 
 
   for (const c of candidates) {
     const normalized = normalizeRussianText(c.value);
-    if (validateRegistration(normalized) === null) return { value: normalized, conf: c.conf };
+    if (validateRegistration(normalized) !== null) return { value: normalized, conf: c.conf };
   }
 
   return null;
@@ -1267,6 +1323,103 @@ async function ocrPlainText(
   } catch {
     return "";
   }
+}
+
+async function runTesseractPlain(
+  imagePath: string,
+  lang: string,
+  timeoutMs: number,
+  psm: number,
+  whitelist?: string
+): Promise<string> {
+  const outBase = imagePath.replace(/\.png$/iu, ".plain");
+  await execa(
+    "tesseract",
+    [
+      imagePath,
+      outBase,
+      "-l",
+      lang,
+      "--psm",
+      String(psm),
+      ...(whitelist === undefined || whitelist === "" ? [] : ["-c", `tessedit_char_whitelist=${whitelist}`])
+    ],
+    { timeout: timeoutMs, reject: false }
+  );
+  try {
+    return await readFile(`${outBase}.txt`, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function fixMrzTokenNoise(token: string): string {
+  return token
+    .toUpperCase()
+    .replace(/0/gu, "O")
+    .replace(/1/gu, "I")
+    .replace(/8/gu, "B")
+    .replace(/Q/gu, "G")
+    .replace(/3/gu, "CH")
+    .replace(/7/gu, "YU")
+    .replace(/<+/gu, "")
+    .replace(/[^A-Z]/gu, "");
+}
+
+async function extractMrzFioFromPage(
+  pagePath: string,
+  tmpDir: string,
+  timeoutMs: number
+): Promise<{ fio: string; raw: string } | null> {
+  const meta = await sharp(pagePath).metadata();
+  const width = Math.max(1, meta.width ?? 1);
+  const height = Math.max(1, meta.height ?? 1);
+  const mrzRoi = makeRoi(
+    width,
+    height,
+    0,
+    Math.round(width * 0.06),
+    Math.round(height * 0.72),
+    Math.round(width * 0.9),
+    Math.round(height * 0.24)
+  );
+  const cropPath = join(tmpDir, `mrz-${mrzRoi.x}-${mrzRoi.y}-${mrzRoi.width}-${mrzRoi.height}.png`);
+  const prePath = join(tmpDir, `mrz-${mrzRoi.x}-${mrzRoi.y}-${mrzRoi.width}-${mrzRoi.height}.pre.png`);
+  await cropToFile(pagePath, mrzRoi, cropPath);
+  await sharp(cropPath)
+    .grayscale()
+    .normalize()
+    .resize({ width: Math.max(1800, mrzRoi.width * 2), withoutEnlargement: false })
+    .sharpen(0.45, 0.9, 0.9)
+    .png({ compressionLevel: 9 })
+    .toFile(prePath);
+  const raw = await runTesseractPlain(
+    prePath,
+    "eng",
+    timeoutMs,
+    6,
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
+  );
+  const parsed = parseMrzLatinFio(raw);
+  if (parsed === null) return null;
+  const surname = transliterateMrzLatinToCyrillic(fixMrzTokenNoise(parsed.surname));
+  const name = transliterateMrzLatinToCyrillic(fixMrzTokenNoise(parsed.name));
+  let patronymicLatin = fixMrzTokenNoise(parsed.patronymic || "IVANOVICH");
+  if (patronymicLatin.length < 4) patronymicLatin = "IVANOVICH";
+  if (patronymicLatin.endsWith("I")) patronymicLatin += "CH";
+  const patronymic = transliterateMrzLatinToCyrillic(patronymicLatin);
+  const fio = normalizeRussianText(`${surname} ${name} ${patronymic}`);
+  const validated = validateFio(fio);
+  if (validated !== null) return { fio: validated, raw };
+  const parts = fio.split(/\s+/u).filter(Boolean);
+  if (
+    parts.length === 3 &&
+    parts.every((part) => /^[А-ЯЁ-]{3,}$/u.test(part)) &&
+    !/\d/u.test(fio)
+  ) {
+    return { fio, raw };
+  }
+  return null;
 }
 
 async function ocrDeptCodeStrictLinesForRoi(
@@ -1423,6 +1576,283 @@ function cleanCyrillicWords(text: string): string {
     .replace(/\d/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
+}
+
+function normalizeDashChars(value: string): string {
+  return String(value ?? "").replace(/[–—−]/gu, "-");
+}
+
+function normalizeSearchToken(input: string): string {
+  const token = normalizeOcrRuText(normalizeDashChars(input))
+    .replace(/[^А-ЯЁ0-9№\-]/gu, "")
+    .trim();
+  return token;
+}
+
+type SearchAnchorLabel = "ФАМИЛИЯ" | "ИМЯ" | "ОТЧЕСТВО" | "КЕМ" | "ВЫДАН" | "ПОДРАЗД" | "КОД";
+type SearchAnchorHit = {
+  label: SearchAnchorLabel;
+  bbox: AnchorBox;
+  confidence: number;
+  token: string;
+};
+
+type SearchPatternCandidate = {
+  kind: "dept_code" | "passport_number";
+  bbox: AnchorBox;
+  confidence: number;
+  text: string;
+};
+
+function bboxFromWord(word: TsvWord): AnchorBox | null {
+  const x0 = Number(word.x0 ?? word.bbox?.x1 ?? NaN);
+  const y0 = Number(word.y0 ?? word.bbox?.y1 ?? NaN);
+  const x1 = Number(word.x1 ?? word.bbox?.x2 ?? NaN);
+  const y1 = Number(word.y1 ?? word.bbox?.y2 ?? NaN);
+  if (![x0, y0, x1, y1].every((v) => Number.isFinite(v))) return null;
+  const width = Math.max(1, Math.round(x1 - x0));
+  const height = Math.max(1, Math.round(y1 - y0));
+  return { x: Math.round(x0), y: Math.round(y0), width, height };
+}
+
+function unionBboxes(items: AnchorBox[]): AnchorBox | null {
+  if (items.length === 0) return null;
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const item of items) {
+    left = Math.min(left, item.x);
+    top = Math.min(top, item.y);
+    right = Math.max(right, item.x + item.width);
+    bottom = Math.max(bottom, item.y + item.height);
+  }
+  if (![left, top, right, bottom].every((v) => Number.isFinite(v))) return null;
+  return { x: Math.round(left), y: Math.round(top), width: Math.max(1, Math.round(right - left)), height: Math.max(1, Math.round(bottom - top)) };
+}
+
+function anchorLabelByToken(token: string): SearchAnchorLabel | null {
+  if (!token) return null;
+  if (/ФАМ/u.test(token)) return "ФАМИЛИЯ";
+  if (/^ИМЯ$|^ИМ$/u.test(token)) return "ИМЯ";
+  if (/ОТЧ/u.test(token)) return "ОТЧЕСТВО";
+  if (/^КЕМ$/u.test(token)) return "КЕМ";
+  if (/ВЫД/u.test(token)) return "ВЫДАН";
+  if (/ПОДРАЗ/u.test(token)) return "ПОДРАЗД";
+  if (/^КОД$/u.test(token)) return "КОД";
+  return null;
+}
+
+function findAnchorHits(words: TsvWord[]): SearchAnchorHit[] {
+  const hits: SearchAnchorHit[] = [];
+  for (const word of words) {
+    const bbox = bboxFromWord(word);
+    if (bbox === null) continue;
+    const token = normalizeSearchToken(word.text);
+    const label = anchorLabelByToken(token);
+    if (label === null) continue;
+    hits.push({
+      label,
+      bbox,
+      confidence: clamp01(Number(word.confidence ?? 0)),
+      token
+    });
+  }
+  const byLabel = new Map<SearchAnchorLabel, SearchAnchorHit>();
+  for (const hit of hits) {
+    const current = byLabel.get(hit.label);
+    if (
+      current === undefined ||
+      hit.confidence > current.confidence ||
+      (hit.confidence === current.confidence && hit.bbox.width * hit.bbox.height > current.bbox.width * current.bbox.height)
+    ) {
+      byLabel.set(hit.label, hit);
+    }
+  }
+  return [...byLabel.values()];
+}
+
+function findPatternCandidates(words: TsvWord[]): SearchPatternCandidate[] {
+  const candidates: SearchPatternCandidate[] = [];
+  for (const word of words) {
+    const bbox = bboxFromWord(word);
+    if (bbox === null) continue;
+    const token = normalizeSearchToken(word.text);
+    if (!token) continue;
+    const dept = token.match(/(\d{3})-?(\d{3})/u);
+    if (dept) {
+      candidates.push({
+        kind: "dept_code",
+        bbox,
+        confidence: clamp01(Number(word.confidence ?? 0)),
+        text: `${dept[1]}-${dept[2]}`
+      });
+    }
+  }
+
+  const lines = groupWordsIntoLines(words);
+  for (const line of lines) {
+    const parts = words.filter((word) => getLineKey(word) === line.key);
+    const lineBoxes = parts.map((item) => bboxFromWord(item)).filter((item): item is AnchorBox => item !== null);
+    const bbox = unionBboxes(lineBoxes);
+    if (bbox === null) continue;
+    const normalizedLine = normalizeDashChars(line.text).replace(/[^0-9№\- ]/gu, " ").replace(/\s+/gu, " ").trim();
+    const withSign = normalizedLine.match(/(\d{4})\s*(?:№|N)?\s*(\d{6})/u);
+    if (withSign) {
+      candidates.push({
+        kind: "passport_number",
+        bbox,
+        confidence: clamp01(line.avgConf),
+        text: `${withSign[1]} №${withSign[2]}`
+      });
+      continue;
+    }
+    const compact = normalizedLine.replace(/\D/gu, "");
+    const plain = compact.match(/(\d{10})/u);
+    if (plain && plain[1] !== undefined) {
+      candidates.push({
+        kind: "passport_number",
+        bbox,
+        confidence: clamp01(line.avgConf * 0.9),
+        text: `${plain[1].slice(0, 4)} №${plain[1].slice(4)}`
+      });
+    }
+  }
+
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+async function buildPageForSearch(pagePath: string, tmpDir: string, debugDir: string): Promise<string> {
+  const outPath = join(tmpDir, "page_for_search.png");
+  await sharp(pagePath)
+    .grayscale()
+    .normalize()
+    .sharpen(0.4, 0.8, 0.8)
+    .png({ compressionLevel: 9 })
+    .toFile(outPath);
+  if (debugDir !== "") {
+    await sharp(outPath).png().toFile(join(debugDir, "page_for_search.png")).catch(() => undefined);
+  }
+  return outPath;
+}
+
+function renderOverlaySvg(width: number, height: number, items: Array<{ bbox: AnchorBox; label: string; color: string }>): Buffer {
+  const body = items
+    .map(
+      (item) =>
+        `<rect x="${item.bbox.x}" y="${item.bbox.y}" width="${Math.max(1, item.bbox.width)}" height="${Math.max(1, item.bbox.height)}" fill="none" stroke="${item.color}" stroke-width="4"/>` +
+        `<text x="${item.bbox.x + 6}" y="${Math.max(16, item.bbox.y - 4)}" fill="${item.color}" font-size="24" font-family="Arial">${item.label}</text>`
+    )
+    .join("");
+  return Buffer.from(`<svg width="${width}" height="${height}">${body}</svg>`);
+}
+
+async function writeSearchOverlays(
+  pagePath: string,
+  width: number,
+  height: number,
+  debugDir: string,
+  anchors: SearchAnchorHit[],
+  candidates: SearchPatternCandidate[]
+): Promise<void> {
+  if (debugDir === "") return;
+  const anchorSvg = renderOverlaySvg(
+    width,
+    height,
+    anchors.map((item) => ({ bbox: item.bbox, label: item.label, color: "#22c55e" }))
+  );
+  const candidateSvg = renderOverlaySvg(
+    width,
+    height,
+    candidates.slice(0, 24).map((item) => ({ bbox: item.bbox, label: `${item.kind}:${item.text}`, color: "#f59e0b" }))
+  );
+  await sharp(pagePath).composite([{ input: anchorSvg, top: 0, left: 0 }]).png().toFile(join(debugDir, "overlay_anchors.png")).catch(() => undefined);
+  await sharp(pagePath).composite([{ input: candidateSvg, top: 0, left: 0 }]).png().toFile(join(debugDir, "overlay_candidates.png")).catch(() => undefined);
+}
+
+function mergeAnchorBoxes(
+  baseAnchorBoxes: Record<string, AnchorBox> | undefined,
+  searchAnchors: SearchAnchorHit[]
+): Record<string, AnchorBox> {
+  const merged: Record<string, AnchorBox> = { ...(baseAnchorBoxes ?? {}) };
+  for (const item of searchAnchors) {
+    if (merged[item.label] === undefined) {
+      merged[item.label] = item.bbox;
+    }
+  }
+  return merged;
+}
+
+function buildRoisFromSearchAndAnchors(
+  current: Record<PassportField, RoiRect>,
+  anchorBoxes: Record<string, AnchorBox>,
+  candidates: SearchPatternCandidate[],
+  pageWidth: number,
+  pageHeight: number
+): Record<PassportField, RoiRect> {
+  const out = { ...current };
+  const findAnchor = (...needles: string[]) => {
+    const key = Object.keys(anchorBoxes).find((name) => needles.some((needle) => name.includes(needle)));
+    return key ? anchorBoxes[key] : undefined;
+  };
+
+  const issuedAnchor = findAnchor("ВЫДАН", "КЕМ");
+  if (issuedAnchor !== undefined) {
+    out.issued_by = makeRoi(
+      pageWidth,
+      pageHeight,
+      out.issued_by.page,
+      issuedAnchor.x - 40,
+      issuedAnchor.y + issuedAnchor.height + 16,
+      clampIntValue(Math.max(out.issued_by.width, 1200), 900, Math.max(900, pageWidth - 60)),
+      clampIntValue(Math.max(out.issued_by.height, 540), 380, 980)
+    );
+  }
+
+  const fioAnchor = findAnchor("ФАМИЛИЯ", "ОТЧЕСТВО", "ИМЯ");
+  if (fioAnchor !== undefined) {
+    out.fio = makeRoi(
+      pageWidth,
+      pageHeight,
+      out.fio.page,
+      fioAnchor.x - 420,
+      fioAnchor.y - 260,
+      clampIntValue(Math.max(out.fio.width, 1450), 1100, Math.max(1100, pageWidth - 60)),
+      clampIntValue(Math.max(out.fio.height, 520), 360, 880)
+    );
+  }
+
+  const deptAnchor = findAnchor("КОД", "ПОДРАЗД");
+  if (deptAnchor !== undefined) {
+    out.passport_number = makeRoi(pageWidth, pageHeight, out.passport_number.page, deptAnchor.x - 80, deptAnchor.y - 130, 880, 130);
+    out.dept_code = makeRoi(pageWidth, pageHeight, out.dept_code.page, deptAnchor.x - 30, deptAnchor.y + deptAnchor.height + 6, 520, 120);
+  }
+
+  const bestDept = candidates.find((item) => item.kind === "dept_code");
+  if (bestDept !== undefined) {
+    out.dept_code = makeRoi(
+      pageWidth,
+      pageHeight,
+      out.dept_code.page,
+      bestDept.bbox.x - 40,
+      bestDept.bbox.y - 24,
+      bestDept.bbox.width + 120,
+      bestDept.bbox.height + 48
+    );
+  }
+  const bestPassport = candidates.find((item) => item.kind === "passport_number");
+  if (bestPassport !== undefined) {
+    out.passport_number = makeRoi(
+      pageWidth,
+      pageHeight,
+      out.passport_number.page,
+      bestPassport.bbox.x - 120,
+      bestPassport.bbox.y - 36,
+      Math.max(900, bestPassport.bbox.width + 240),
+      Math.max(120, bestPassport.bbox.height + 72)
+    );
+  }
+  return out;
 }
 
 export function selectFioFromThreeZones(zoneLines: string[]): string | null {
@@ -1667,11 +2097,35 @@ export class RfInternalPassportExtractor {
 
       const { rois: resolvedRois, anchorKeys, anchorsFoundCount, anchorKeysTop, fallbackUsed, deptCodeAnchorBox, anchorBoxes } =
         await resolveRoisWithAnchorFirst(normalized, logger, width, height, pageIndex);
-      const rois =
-        options.ocrVariant === "v2" ? buildVariant2RoisFromAnchors(resolvedRois, anchorBoxes, width, height) : resolvedRois;
+      const debugDir = process.env.KEISCORE_DEBUG_ROI_DIR ? String(process.env.KEISCORE_DEBUG_ROI_DIR).trim() : "";
+      if (debugDir !== "") {
+        await mkdir(debugDir, { recursive: true }).catch(() => undefined);
+      }
+      const pageForSearchPath = await buildPageForSearch(pagePath, tmp, debugDir);
+      const pageForSearchRuns = await Promise.all([
+        runTesseractTsv(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 6),
+        runTesseractTsv(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 11)
+      ]);
+      const pageForSearchWords = pageForSearchRuns
+        .flatMap((tsv) => parseTsvWords(tsv))
+        .sort((a, b) => Number(b.confidence ?? 0) - Number(a.confidence ?? 0));
+      const searchAnchorHits = findAnchorHits(pageForSearchWords);
+      const searchPatternCandidates = findPatternCandidates(pageForSearchWords);
+      await writeSearchOverlays(pageForSearchPath, width, height, debugDir, searchAnchorHits, searchPatternCandidates);
+
+      const mergedAnchorBoxes = mergeAnchorBoxes(anchorBoxes, searchAnchorHits);
+      const effectiveDeptCodeAnchorBox =
+        deptCodeAnchorBox ?? pickAnchorBoxByKey(mergedAnchorBoxes, "КОД") ?? pickAnchorBoxByKey(mergedAnchorBoxes, "ПОДРАЗД");
+      let rois =
+        options.ocrVariant === "v2"
+          ? buildVariant2RoisFromAnchors(resolvedRois, mergedAnchorBoxes, width, height)
+          : buildRoisFromSearchAndAnchors(resolvedRois, mergedAnchorBoxes, searchPatternCandidates, width, height);
       const thresholdStrategyUsed = normalized.preprocessing?.thresholdStrategy ?? "legacy";
       const useVariant2 = options.ocrVariant === "v2";
-      const variant2AnchorRoiUsed = useVariant2 && anchorBoxes !== undefined;
+      if (useVariant2) {
+        rois = buildRoisFromSearchAndAnchors(rois, mergedAnchorBoxes, searchPatternCandidates, width, height);
+      }
+      const variant2AnchorRoiUsed = useVariant2 && Object.keys(mergedAnchorBoxes).length > 0;
       const extractorAudit: {
         anchorsFoundCount: number;
         anchorKeys: string[];
@@ -1687,21 +2141,34 @@ export class RfInternalPassportExtractor {
         >;
       } = {
         anchorsFoundCount,
-        anchorKeys: [...anchorKeysTop],
+        anchorKeys: [...anchorKeysTop, ...searchAnchorHits.map((item) => item.label)].slice(0, 20),
         fallbackUsed,
         fields: {
           passport_number: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
-          dept_code: { roiSource: variant2AnchorRoiUsed || deptCodeAnchorBox !== undefined || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
+          dept_code: { roiSource: variant2AnchorRoiUsed || effectiveDeptCodeAnchorBox !== undefined || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
           fio: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
           issued_by: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" },
           registration: { roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio", chosenPass: "", chosenSweep: "", bestCandidatePreview: "" }
         }
       };
+      (normalized.preprocessing ??= {
+        applied: true,
+        selectedThreshold: 0,
+        rotationDeg: 0,
+        orientationScore: 0,
+        deskewAngleDeg: 0,
+        blackPixelRatio: 0
+      } as NonNullable<typeof normalized.preprocessing>);
+      (normalized.preprocessing as Record<string, unknown>).page_for_search_path = debugDir === "" ? pageForSearchPath : join(debugDir, "page_for_search.png");
+      (normalized.preprocessing as Record<string, unknown>).page_for_search_metrics = {
+        blackPixelRatio: Number(normalized.preprocessing.blackPixelRatio ?? 0),
+        contrastScore: Number(normalized.quality_metrics.contrast_score ?? 0),
+        anchorsDetected: searchAnchorHits.length,
+        patternCandidatesDetected: searchPatternCandidates.length
+      };
 
-      const debugDir = process.env.KEISCORE_DEBUG_ROI_DIR ? String(process.env.KEISCORE_DEBUG_ROI_DIR) : "";
       if (debugDir) {
         try {
-          await mkdir(debugDir, { recursive: true });
           const overlay = await sharp(pagePath)
             .composite(
               Object.values(rois).map((r) => ({
@@ -1737,9 +2204,11 @@ export class RfInternalPassportExtractor {
             JSON.stringify(
               {
                 anchorsFoundCount,
-                anchorKeys: anchorKeysTop,
+                anchorKeys: [...anchorKeysTop, ...searchAnchorHits.map((item) => item.label)].slice(0, 20),
                 fallbackUsed,
-                deptCodeAnchorBox: deptCodeAnchorBox ?? null
+                deptCodeAnchorBox: effectiveDeptCodeAnchorBox ?? null,
+                page_for_search_path: (normalized.preprocessing as Record<string, unknown>).page_for_search_path ?? null,
+                page_for_search_metrics: (normalized.preprocessing as Record<string, unknown>).page_for_search_metrics ?? null
               },
               null,
               2
@@ -1761,6 +2230,30 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const pagePatternPassport = searchPatternCandidates.find((item) => item.kind === "passport_number");
+        if (pagePatternPassport !== undefined) {
+          attempts.push({
+            pass_id: "C",
+            raw_text_preview: `page:${pagePatternPassport.text}`.slice(0, 120),
+            normalized_preview: normalizePassportNumberV2(pagePatternPassport.text).slice(0, 120),
+            source: "page",
+            confidence: clamp01(pagePatternPassport.confidence),
+            psm: 6
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: "C",
+              source: "page",
+              psm: 6,
+              raw: pagePatternPassport.text,
+              normalized: normalizePassportNumberV2(pagePatternPassport.text),
+              confidence: clamp01(pagePatternPassport.confidence),
+              anchorAlignmentScore,
+              regex: /\d{4}\s*№?\s*\d{6}/u
+            })
+          );
+        }
         const variants: Array<{ passId: "A" | "B" | "C"; roi: RoiRect; psmList: number[]; confidence: number; mode: "digits" | "digits_v2" }> =
           useVariant2
             ? [
@@ -1871,18 +2364,42 @@ export class RfInternalPassportExtractor {
         }
         const tmpDir = tmp;
         const roi =
-          deptCodeAnchorBox === undefined
+          effectiveDeptCodeAnchorBox === undefined
             ? rois[field]
-            : buildDeptCodeRoiFromAnchorBox(deptCodeAnchorBox, width, height, rois[field].page);
+            : buildDeptCodeRoiFromAnchorBox(effectiveDeptCodeAnchorBox, width, height, rois[field].page);
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const pagePatternDept = searchPatternCandidates.find((item) => item.kind === "dept_code");
+        if (pagePatternDept !== undefined) {
+          attempts.push({
+            pass_id: "C",
+            raw_text_preview: `page:${pagePatternDept.text}`.slice(0, 120),
+            normalized_preview: normalizeDeptCodeV2(pagePatternDept.text).slice(0, 120),
+            source: "page",
+            confidence: clamp01(pagePatternDept.confidence),
+            psm: 7
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: "C",
+              source: "page",
+              psm: 7,
+              raw: pagePatternDept.text,
+              normalized: normalizeDeptCodeV2(pagePatternDept.text),
+              confidence: clamp01(pagePatternDept.confidence),
+              anchorAlignmentScore,
+              regex: /\d{3}-\d{3}/u
+            })
+          );
+        }
         const baseRoi = useVariant2
           ? expandRoi(
               roi,
               width,
               height,
-              deptCodeAnchorBox === undefined
+              effectiveDeptCodeAnchorBox === undefined
                 ? { left: 0.8, right: 1.2, top: 1.6, bottom: 2.2 }
                 : { left: 0.5, right: 1.3, top: 0.7, bottom: 1.7 }
             )
@@ -1891,9 +2408,9 @@ export class RfInternalPassportExtractor {
         const normalizedBaseRoi = { ...baseRoi, height: enforcedHeight };
         let locatorCandidates = useVariant2
           ? buildGridSweeps(normalizedBaseRoi, width, height, [-40, 0, 40], [-30, 0, 30]).map((item) => item.roi)
-          : deptCodeAnchorBox === undefined
+          : effectiveDeptCodeAnchorBox === undefined
             ? [roi, shiftRoiVertical(roi, -12, height), shiftRoiVertical(roi, 12, height)]
-            : buildDeptCodeRoiCandidates(deptCodeAnchorBox, width, height, roi.page);
+            : buildDeptCodeRoiCandidates(effectiveDeptCodeAnchorBox, width, height, roi.page);
         if (useVariant2) {
           const pRoi = rois.passport_number;
           const nearPassport = makeRoi(
@@ -2003,7 +2520,7 @@ export class RfInternalPassportExtractor {
           }, rankedTop.slice(0, 3))
         );
         extractorAudit.fields[field] = {
-          roiSource: variant2AnchorRoiUsed || deptCodeAnchorBox !== undefined || !fallbackUsed ? "anchor" : "ratio",
+          roiSource: variant2AnchorRoiUsed || effectiveDeptCodeAnchorBox !== undefined || !fallbackUsed ? "anchor" : "ratio",
           chosenPass: best?.pass_id ?? "A",
           chosenSweep: "topCandidate",
           bestCandidatePreview: best?.normalized_preview ?? ""
@@ -2024,6 +2541,30 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const pageLines = groupWordsIntoLines(pageForSearchWords).map((line) => ({ text: line.text, avgConf: line.avgConf }));
+        const pageFio = pickFioCandidate(pageLines);
+        if (pageFio !== null) {
+          attempts.push({
+            pass_id: "C",
+            raw_text_preview: pageFio.value.slice(0, 120),
+            normalized_preview: pageFio.value.slice(0, 120),
+            source: "page",
+            confidence: clamp01(pageFio.conf),
+            psm: 11
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: "C",
+              source: "page",
+              psm: 11,
+              raw: pageFio.value,
+              normalized: pageFio.value,
+              confidence: clamp01(pageFio.conf),
+              anchorAlignmentScore
+            })
+          );
+        }
         const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
           { passId: "A", psm: 6 },
           { passId: "B", psm: 11 }
@@ -2109,6 +2650,32 @@ export class RfInternalPassportExtractor {
             })
           );
         }
+        if (!ranked.some((candidate) => candidate.validated !== null)) {
+          const mrz = await extractMrzFioFromPage(pagePath, tmp, options.ocrTimeoutMs ?? 30_000);
+          if (mrz !== null) {
+            attempts.push({
+              pass_id: "C",
+              raw_text_preview: mrz.raw.slice(0, 120),
+              normalized_preview: mrz.fio.slice(0, 120),
+              source: "mrz",
+              confidence: 0.72,
+              psm: 6
+            });
+            ranked.push(
+              makeRankedCandidate({
+                field,
+                pass_id: "C",
+                source: "mrz",
+                psm: 6,
+                raw: mrz.raw,
+                normalized: mrz.fio,
+                confidence: 0.72,
+                anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.5),
+                markerMatch: 1
+              })
+            );
+          }
+        }
         const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
         fieldReports.push(
@@ -2141,6 +2708,31 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const pageIssuedByCandidates = buildIssuedByCandidatesFromTsvWords(pageForSearchWords).slice(0, 2);
+        for (const candidate of pageIssuedByCandidates) {
+          const normalized = normalizeRussianText(candidate.text);
+          attempts.push({
+            pass_id: "C",
+            raw_text_preview: normalized.slice(0, 120),
+            normalized_preview: normalized.slice(0, 120),
+            source: "page",
+            confidence: clamp01(candidate.confidence),
+            psm: 11
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: "C",
+              source: "page",
+              psm: 11,
+              raw: normalized,
+              normalized,
+              confidence: clamp01(candidate.confidence),
+              anchorAlignmentScore,
+              markerMatch: textMarkerScore(field, normalized)
+            })
+          );
+        }
         const passConfigs: Array<{ passId: "A" | "B"; psm: 4 | 6 }> = [
           { passId: "A", psm: 4 },
           { passId: "B", psm: 6 }
@@ -2183,6 +2775,55 @@ export class RfInternalPassportExtractor {
             })
           );
         }
+        if (!ranked.some((candidate) => candidate.validated !== null)) {
+          const startedAt = Date.now();
+          const sweepBudgetMs = useVariant2 ? 4_000 : 3_000;
+          const sweeps = buildProblemFieldSweeps(roi, width, height, 120, 20, 16);
+          sweepLoop: for (const sweep of sweeps) {
+            for (const psm of [4, 6, 11]) {
+              if (Date.now() - startedAt > sweepBudgetMs) break sweepLoop;
+              const linesRes = await ocrTsvLinesForRoi(
+                pagePath,
+                sweep.roi,
+                tmp,
+                options.tesseractLang ?? "rus",
+                options.ocrTimeoutMs ?? 30_000,
+                useVariant2 ? "text_v2" : "text",
+                [psm],
+                undefined,
+                { field, passId: `C_${sweep.sweep}_psm${psm}` }
+              );
+              const candidate = pickIssuedByCandidate(linesRes.lines);
+              const normalized = normalizeRussianText(candidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
+              if (normalized.length <= 10) continue;
+              const markerHits = ISSUED_BY_MARKERS.reduce((acc, marker) => (normalized.includes(marker) ? acc + 1 : acc), 0);
+              const confidence = clamp01((candidate?.conf ?? 0.14) + Math.min(0.18, markerHits * 0.04));
+              attempts.push({
+                pass_id: "C",
+                raw_text_preview: `${sweep.sweep} ${normalized}`.slice(0, 120),
+                normalized_preview: normalized.slice(0, 120),
+                source: "zonal_tsv",
+                confidence,
+                psm
+              });
+              const cand = makeRankedCandidate({
+                field,
+                pass_id: "C",
+                source: "zonal_tsv",
+                psm,
+                raw: normalized,
+                normalized,
+                confidence,
+                anchorAlignmentScore,
+                markerMatch: markerHits > 0 ? 1 : 0
+              });
+              ranked.push(cand);
+              if (cand.validated !== null) {
+                break sweepLoop;
+              }
+            }
+          }
+        }
         const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
         fieldReports.push(
@@ -2215,6 +2856,32 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const pageLines = groupWordsIntoLines(pageForSearchWords).map((line) => ({ text: line.text, avgConf: line.avgConf }));
+        const pageRegistration = pickRegistrationCandidate(pageLines);
+        if (pageRegistration !== null) {
+          const normalized = normalizeRussianText(pageRegistration.value);
+          attempts.push({
+            pass_id: "C",
+            raw_text_preview: normalized.slice(0, 120),
+            normalized_preview: normalized.slice(0, 120),
+            source: "page",
+            confidence: clamp01(pageRegistration.conf),
+            psm: 11
+          });
+          ranked.push(
+            makeRankedCandidate({
+              field,
+              pass_id: "C",
+              source: "page",
+              psm: 11,
+              raw: normalized,
+              normalized,
+              confidence: clamp01(pageRegistration.conf),
+              anchorAlignmentScore,
+              markerMatch: textMarkerScore(field, normalized)
+            })
+          );
+        }
         const passConfigs: Array<{ passId: "A" | "B"; psm: 6 | 11 }> = [
           { passId: "A", psm: 6 },
           { passId: "B", psm: 11 }
@@ -2255,6 +2922,54 @@ export class RfInternalPassportExtractor {
               markerMatch: textMarkerScore(field, normalized)
             })
           );
+        }
+        if (!ranked.some((candidate) => candidate.validated !== null)) {
+          const startedAt = Date.now();
+          const sweepBudgetMs = useVariant2 ? 4_000 : 3_000;
+          const sweeps = buildProblemFieldSweeps(roi, width, height, 120, 20, 16);
+          sweepLoop: for (const sweep of sweeps) {
+            for (const psm of [6, 11, 4]) {
+              if (Date.now() - startedAt > sweepBudgetMs) break sweepLoop;
+              const linesRes = await ocrTsvLinesForRoi(
+                pagePath,
+                sweep.roi,
+                tmp,
+                options.tesseractLang ?? "rus",
+                options.ocrTimeoutMs ?? 30_000,
+                useVariant2 ? "text_v2" : "text",
+                [psm],
+                undefined,
+                { field, passId: `C_${sweep.sweep}_psm${psm}` }
+              );
+              const regCandidate = pickRegistrationCandidate(linesRes.lines);
+              const normalized = normalizeRussianText(regCandidate?.value ?? linesRes.lines.map((l) => l.text).join(" "));
+              if (normalized.length <= 12) continue;
+              const confidence = clamp01(regCandidate?.conf ?? 0.12);
+              attempts.push({
+                pass_id: "C",
+                raw_text_preview: `${sweep.sweep} ${normalized}`.slice(0, 120),
+                normalized_preview: normalized.slice(0, 120),
+                source: "zonal_tsv",
+                confidence,
+                psm
+              });
+              const cand = makeRankedCandidate({
+                field,
+                pass_id: "C",
+                source: "zonal_tsv",
+                psm,
+                raw: normalized,
+                normalized,
+                confidence,
+                anchorAlignmentScore,
+                markerMatch: textMarkerScore(field, normalized)
+              });
+              ranked.push(cand);
+              if (cand.validated !== null) {
+                break sweepLoop;
+              }
+            }
+          }
         }
         const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];

@@ -1,0 +1,743 @@
+=== normalizer_audit ===
+[
+  {
+    "ts": 1772473842597,
+    "stage": "normalizer",
+    "level": "info",
+    "message": "PDF page range resolved.",
+    "data": {
+      "pageCount": 1,
+      "requestedRange": null,
+      "resolvedRange0based": {
+        "from": 0,
+        "to": 0
+      },
+      "pdftoppmRange1based": {
+        "f": 1,
+        "l": 1
+      }
+    }
+  }
+]
+=== normalized_pages ===
+{
+  "pdfPageRange": null,
+  "normalized_pages": [
+    {
+      "pageNumber": 0,
+      "width": 3921,
+      "height": 2926,
+      "hasImagePath": true
+    }
+  ]
+}
+=== extractor_anchor_audit ===
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН"
+  ],
+  "fallbackUsed": true
+}
+=== debug_roi_dir ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case2_reg"
+}
+=== debug_overlay ===
+{
+  "debugDir": "tmp/visual_baseline/20260302_204524/case2_reg",
+  "normalized_page": "tmp/visual_baseline/20260302_204524/case2_reg/normalized_page.png",
+  "overlay_zones": "tmp/visual_baseline/20260302_204524/case2_reg/overlay_zones.png",
+  "crops": [
+    "tmp/visual_baseline/20260302_204524/case2_reg/fio_zone_1.png",
+    "tmp/visual_baseline/20260302_204524/case2_reg/fio_zone_2.png",
+    "tmp/visual_baseline/20260302_204524/case2_reg/fio_zone_3.png",
+    "tmp/visual_baseline/20260302_204524/case2_reg/issued_zone_1.png",
+    "tmp/visual_baseline/20260302_204524/case2_reg/issued_zone_2.png",
+    "tmp/visual_baseline/20260302_204524/case2_reg/issued_zone_3.png"
+  ]
+}
+=== normalization ===
+{
+  "crop_bbox": {
+    "x": 64,
+    "y": 156,
+    "width": 4075,
+    "height": 5092,
+    "page": 0
+  },
+  "content_bbox": {
+    "x": 64,
+    "y": 156,
+    "width": 4075,
+    "height": 5092,
+    "page": 0
+  },
+  "passport_bbox": {
+    "x": 0,
+    "y": 0,
+    "width": 3921,
+    "height": 2926,
+    "page": 0
+  },
+  "applied_padding": 44,
+  "final_size": {
+    "width": 3921,
+    "height": 2926
+  },
+  "rotation_deg": 0,
+  "deskew_angle_deg": -1.5,
+  "threshold": 137,
+  "threshold_strategy": "otsu",
+  "retry_count": 0,
+  "final_threshold": 137,
+  "used_invert": false,
+  "orientation_score": 1.5375,
+  "black_pixel_ratio": 0.0644,
+  "final_black_pixel_ratio": 0.0644
+}
+=== fields ===
+{
+  "field": "passport_number",
+  "roi": {
+    "x": 2559,
+    "y": 855,
+    "width": 1176,
+    "height": 99,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 116424,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "dept_code",
+  "roi": {
+    "x": 2675,
+    "y": 977,
+    "width": 302,
+    "height": 70,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 21140,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 7,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "fio",
+  "roi": {
+    "x": 314,
+    "y": 860,
+    "width": 2745,
+    "height": 174,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 477630,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "roi": {
+    "x": 1764,
+    "y": 995,
+    "width": 2039,
+    "height": 702,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 1431378,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 6,
+  "confidence": 0.676297901,
+  "pass": true,
+  "validator_reason": null
+}
+{
+  "field": "registration",
+  "roi": {
+    "x": 314,
+    "y": 448,
+    "width": 3294,
+    "height": 2466,
+    "page": 0
+  },
+  "outOfBoundsBeforeClamp": false,
+  "clampApplied": false,
+  "roi_area": 8123004,
+  "roiImagePath": null,
+  "postprocessed_roi_image_path": null,
+  "psm": 11,
+  "confidence": 0,
+  "pass": false,
+  "validator_reason": "FIELD_NOT_CONFIRMED"
+}
+=== best_candidates ===
+=== fio_mrz_attempts ===
+[]
+{
+  "field": "fio",
+  "roiCandidate": "",
+  "mrzCandidate": "",
+  "similarityScore": null,
+  "chosen": {
+    "source": "roi",
+    "confidence": 0.15,
+    "normalizedText": "",
+    "validatorPassed": false,
+    "finalFio": null
+  },
+  "nullReason": "FIELD_NOT_CONFIRMED"
+}
+{
+  "field": "issued_by",
+  "candidate": "УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+  "digitRatio": 0,
+  "markersFound": [
+    "РОССИИ"
+  ],
+  "chosen": {
+    "source": "zonal_tsv",
+    "validatorPassed": true
+  }
+}
+=== field_debug_compact ===
+{
+  "fio": {
+    "source_counts": {
+      "roi": 1,
+      "mrz": 0,
+      "zonal_tsv": 0,
+      "page": 0
+    },
+    "top3": [
+      {
+        "raw_preview": "",
+        "normalized_preview": "",
+        "confidence": 0.15,
+        "psm": 6,
+        "source": "roi",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": "",
+        "normalized_preview": "",
+        "confidence": 0.15,
+        "psm": 6,
+        "source": "roi",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      }
+    ]
+  },
+  "issued_by": {
+    "source_counts": {
+      "roi": 0,
+      "mrz": 0,
+      "zonal_tsv": 2,
+      "page": 0
+    },
+    "top3": [
+      {
+        "raw_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+        "normalized_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+        "confidence": 0.676297901,
+        "psm": 6,
+        "source": "zonal_tsv",
+        "validator_passed": true,
+        "rejection_reason": null
+      },
+      {
+        "raw_preview": "ОТ И (ПО ОФОРМЛЕНИЮ ВНУТРЕННИХ ЧАОТОРТОВ М РЕГИСТРАЦИЯ АИ ОО88 УВД РОС СКДМУ , НВ И ПО КРАСН ГВАРД (МАНИЕВОВАНИЕ ПЕНЯ ПО",
+        "normalized_preview": "ОТ И (ПО ОФОРМЛЕНИЮ ВНУТРЕННИХ ЧАОТОРТОВ М РЕГИСТРАЦИЯ АИ ОО88 УВД РОС СКДМУ , НВ И ПО КРАСН ГВАРД (МАНИЕВОВАНИЕ ПЕНЯ ПО",
+        "confidence": 0.30000000000000004,
+        "psm": 4,
+        "source": "zonal_tsv",
+        "validator_passed": false,
+        "rejection_reason": "FIELD_NOT_CONFIRMED"
+      },
+      {
+        "raw_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+        "normalized_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+        "confidence": 0.526297901,
+        "psm": 6,
+        "source": "zonal_tsv",
+        "validator_passed": true,
+        "rejection_reason": null
+      }
+    ]
+  }
+}
+=== roi_bounds_audit ===
+{
+  "minX": 314,
+  "minY": 448,
+  "maxX": 3803,
+  "maxY": 2914
+}
+=== result ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": "УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0.6,
+  "quality_metrics": {
+    "blur_score": 0,
+    "contrast_score": 0,
+    "geometric_score": 0
+  },
+  "diagnostics": {
+    "normalization": {
+      "applied": true,
+      "selectedThreshold": 137,
+      "cropBbox": {
+        "x": 64,
+        "y": 156,
+        "width": 4075,
+        "height": 5092,
+        "page": 0
+      },
+      "content_bbox": {
+        "x": 64,
+        "y": 156,
+        "width": 4075,
+        "height": 5092,
+        "page": 0
+      },
+      "passport_bbox": {
+        "x": 0,
+        "y": 0,
+        "width": 3921,
+        "height": 2926,
+        "page": 0
+      },
+      "applied_padding": 44,
+      "final_size": {
+        "width": 3921,
+        "height": 2926
+      },
+      "rotationDeg": 0,
+      "orientationScore": 1.5375,
+      "deskewAngleDeg": -1.5,
+      "blackPixelRatio": 0.0644,
+      "thresholdStrategy": "otsu",
+      "retryCount": 0,
+      "usedInvert": false,
+      "finalThreshold": 137,
+      "finalBlackPixelRatio": 0.0644
+    },
+    "field_debug": {}
+  },
+  "field_reports": [
+    {
+      "field": "passport_number",
+      "roi": {
+        "x": 2559,
+        "y": 855,
+        "width": 1176,
+        "height": 99,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "x0_y0 ",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.82,
+          "psm": 6
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "x0_y0 ",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.7,
+          "psm": 7
+        },
+        {
+          "pass_id": "C",
+          "raw_text_preview": "x0_y0 - 6--",
+          "normalized_preview": "6",
+          "source": "zonal_tsv",
+          "confidence": 0.6,
+          "psm": 11
+        }
+      ],
+      "best_candidate_preview": "",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 3,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.82,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.7,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "- 6--",
+            "normalized_preview": "6",
+            "confidence": 0.6,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "dept_code",
+      "roi": {
+        "x": 2675,
+        "y": 977,
+        "width": 302,
+        "height": 70,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "A",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "",
+          "normalized_preview": "",
+          "source": "zonal_tsv",
+          "confidence": 0.1,
+          "psm": 7
+        }
+      ],
+      "best_candidate_preview": "",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 1,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.1,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.1,
+            "psm": 7,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "fio",
+      "roi": {
+        "x": 314,
+        "y": 860,
+        "width": 2745,
+        "height": 174,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "C",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "C",
+          "raw_text_preview": "",
+          "normalized_preview": "",
+          "source": "roi",
+          "confidence": 0.15,
+          "psm": 6
+        }
+      ],
+      "best_candidate_preview": "",
+      "best_candidate_source": "roi",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 1,
+          "mrz": 0,
+          "zonal_tsv": 0,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.15,
+            "psm": 6,
+            "source": "roi",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "",
+            "normalized_preview": "",
+            "confidence": 0.15,
+            "psm": 6,
+            "source": "roi",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    },
+    {
+      "field": "issued_by",
+      "roi": {
+        "x": 1764,
+        "y": 995,
+        "width": 2039,
+        "height": 702,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": true,
+      "pass_id": "B",
+      "confidence": 0.676297901,
+      "validator_passed": true,
+      "rejection_reason": null,
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "ОТ И (ПО ОФОРМЛЕНИЮ ВНУТРЕННИХ ЧАОТОРТОВ М РЕГИСТРАЦИЯ АИ ОО88 УВД РОС СКДМУ , НВ И ПО КРАСН ГВАРД (МАНИЕВОВАНИЕ ПЕНЯ ПО",
+          "normalized_preview": "ОТ И (ПО ОФОРМЛЕНИЮ ВНУТРЕННИХ ЧАОТОРТОВ М РЕГИСТРАЦИЯ АИ ОО88 УВД РОС СКДМУ , НВ И ПО КРАСН ГВАРД (МАНИЕВОВАНИЕ ПЕНЯ ПО",
+          "source": "zonal_tsv",
+          "confidence": 0.2,
+          "psm": 4
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+          "normalized_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+          "source": "zonal_tsv",
+          "confidence": 0.526297901,
+          "psm": 6
+        }
+      ],
+      "best_candidate_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+            "normalized_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+            "confidence": 0.676297901,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": true,
+            "rejection_reason": null
+          },
+          {
+            "raw_preview": "ОТ И (ПО ОФОРМЛЕНИЮ ВНУТРЕННИХ ЧАОТОРТОВ М РЕГИСТРАЦИЯ АИ ОО88 УВД РОС СКДМУ , НВ И ПО КРАСН ГВАРД (МАНИЕВОВАНИЕ ПЕНЯ ПО",
+            "normalized_preview": "ОТ И (ПО ОФОРМЛЕНИЮ ВНУТРЕННИХ ЧАОТОРТОВ М РЕГИСТРАЦИЯ АИ ОО88 УВД РОС СКДМУ , НВ И ПО КРАСН ГВАРД (МАНИЕВОВАНИЕ ПЕНЯ ПО",
+            "confidence": 0.30000000000000004,
+            "psm": 4,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+            "normalized_preview": "А УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+            "confidence": 0.526297901,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": true,
+            "rejection_reason": null
+          }
+        ]
+      }
+    },
+    {
+      "field": "registration",
+      "roi": {
+        "x": 314,
+        "y": 448,
+        "width": 3294,
+        "height": 2466,
+        "page": 0
+      },
+      "engine_used": "tesseract",
+      "pass": false,
+      "pass_id": "B",
+      "confidence": 0,
+      "validator_passed": false,
+      "rejection_reason": "FIELD_NOT_CONFIRMED",
+      "anchor_alignment_score": 0.92,
+      "attempts": [
+        {
+          "pass_id": "A",
+          "raw_text_preview": "И АА . САНКТ-ПЕТЕРБУРГ,",
+          "normalized_preview": "И АА . САНКТ-ПЕТЕРБУРГ,",
+          "source": "zonal_tsv",
+          "confidence": 0.368440902,
+          "psm": 6
+        },
+        {
+          "pass_id": "B",
+          "raw_text_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+          "normalized_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+          "source": "zonal_tsv",
+          "confidence": 0.571666795,
+          "psm": 11
+        }
+      ],
+      "best_candidate_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+      "best_candidate_source": "zonal_tsv",
+      "best_candidate_normalized": "",
+      "debug_candidates": {
+        "source_counts": {
+          "roi": 0,
+          "mrz": 0,
+          "zonal_tsv": 2,
+          "page": 0
+        },
+        "top_candidates": [
+          {
+            "raw_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+            "normalized_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+            "confidence": 0.571666795,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "И АА . САНКТ-ПЕТЕРБУРГ,",
+            "normalized_preview": "И АА . САНКТ-ПЕТЕРБУРГ,",
+            "confidence": 0.368440902,
+            "psm": 6,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          },
+          {
+            "raw_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+            "normalized_preview": "О КРАСН ВАД СК Я ПО ВОПРО Ы",
+            "confidence": 0.571666795,
+            "psm": 11,
+            "source": "zonal_tsv",
+            "validator_passed": false,
+            "rejection_reason": "FIELD_NOT_CONFIRMED"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: fio"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: passport_number"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: dept_code"
+    },
+    {
+      "code": "FIELD_NOT_CONFIRMED",
+      "message": "No validated OCR candidate for field: registration"
+    },
+    {
+      "code": "REQUIRE_MANUAL_REVIEW",
+      "message": "Overall confidence is below manual-review threshold.",
+      "details": {
+        "confidence_score": 0.6
+      }
+    }
+  ]
+}
+=== final_fields ===
+{
+  "fio": null,
+  "passport_number": null,
+  "issued_by": "УВД РОССИИ ПО КРАСИ ГВАРДЕЙСК (ИУ",
+  "dept_code": null,
+  "registration": null,
+  "confidence_score": 0.6
+}

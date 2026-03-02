@@ -1,0 +1,48 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "РОСС",
+    "ВЫДАН",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ОТЧЕСТВО",
+    "ПОЛ",
+    "ФАМИЛИЯ",
+    "ИМЯ",
+    "ПОДРАЗД",
+    "ВЫДАН",
+    "ОТЧЕСТВО"
+  ],
+  "fallbackUsed": false,
+  "fields": {
+    "passport_number": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "4027190481"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "092-006"
+    },
+    "fio": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "split3",
+      "bestCandidatePreview": "РА АРТЕМ Ь АЙ ОТЧЕСТВО НАЦ ЮРЬЕВИЧ АА Й З НОЛ МУЖ МНЕНИЯ Т Е О ОО СЕ М ВОР САНКТ-ПЕТЕРБУРГ О С О"
+    },
+    "issued_by": {
+      "roiSource": "anchor",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "Д СТВО ЗА 954 Е, АА ОЖ О Я 7.2 Р. Е Г -- Т В Р С АРИИ ОЙ Р ТА"
+    },
+    "registration": {
+      "roiSource": "anchor",
+      "chosenPass": "B",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "РМЕИЗВОВМТЗТВОМ АКТЕМ ТЕ ЗЕУТЗ"
+    }
+  }
+}

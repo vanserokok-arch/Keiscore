@@ -1,0 +1,25 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН",
+    "ПОДРАЗД"
+  ],
+  "fallbackUsed": true,
+  "deptCodeAnchorBox": {
+    "x": 2496,
+    "y": 1219,
+    "width": 325,
+    "height": 49
+  },
+  "page_for_search_path": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-17-13-280Z/registration/page_for_search.png",
+  "page_for_search_metrics": {
+    "blackPixelRatio": 0.0482,
+    "contrastScore": 1,
+    "anchorsDetected": 1,
+    "patternCandidatesDetected": 2
+  }
+}

@@ -31,7 +31,8 @@ export function mapRunResultToUi(lastResult, thrownError) {
             fieldRows: [],
             normalizationRows: [],
             sourceRows: [],
-            debugDir: null
+            debugDir: null,
+            artifactPaths: []
         };
     }
     if (lastResult === null) {
@@ -41,7 +42,8 @@ export function mapRunResultToUi(lastResult, thrownError) {
             fieldRows: [],
             normalizationRows: [],
             sourceRows: [],
-            debugDir: null
+            debugDir: null,
+            artifactPaths: []
         };
     }
     if (!lastResult.ok) {
@@ -51,7 +53,8 @@ export function mapRunResultToUi(lastResult, thrownError) {
             fieldRows: [],
             normalizationRows: [],
             sourceRows: [],
-            debugDir: null
+            debugDir: null,
+            artifactPaths: []
         };
     }
     const data = lastResult.data;
@@ -122,13 +125,26 @@ export function mapRunResultToUi(lastResult, thrownError) {
             convertedPdfPath: data.diagnostics.registration.convertedPdfPath ?? null
         });
     }
+    const artifactPaths = [];
+    if (data.debugDir) {
+        const root = data.debugDir.endsWith("/") ? data.debugDir.slice(0, -1) : data.debugDir;
+        const sourceDirs = [`${root}/passport`, `${root}/registration`];
+        for (const dir of sourceDirs) {
+            artifactPaths.push(`${dir}/page_for_search.png`);
+            artifactPaths.push(`${dir}/overlay_anchors.png`);
+            artifactPaths.push(`${dir}/overlay_candidates.png`);
+            artifactPaths.push(`${dir}/extractor_anchor_audit.json`);
+            artifactPaths.push(`${dir}/extractor_audit.json`);
+        }
+    }
     return {
         rawJson: JSON.stringify(lastResult, null, 2),
         errors: data.errors ?? [],
         fieldRows,
         normalizationRows,
         sourceRows,
-        debugDir: data.debugDir
+        debugDir: data.debugDir,
+        artifactPaths
     };
 }
 //# sourceMappingURL=ocrSandboxRunResult.js.map

@@ -1,0 +1,24 @@
+{
+  "caseId": "case1",
+  "kind": "png",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-13-13-044Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-13-13-044Z/passport.from-png.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T18-13-13-044Z/registration.from-png.pdf"
+  },
+  "confirmed": {
+    "fio": false,
+    "passport_number": false,
+    "issued_by": false,
+    "dept_code": false,
+    "registration": false
+  },
+  "confirmedCount": 0,
+  "passportFields": {
+    "fio": null,
+    "passport_number": null,
+    "issued_by": null,
+    "dept_code": null
+  },
+  "registrationField": null
+}

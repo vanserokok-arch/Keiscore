@@ -166,10 +166,18 @@ export interface NormalizedInput {
         deskewAngleDeg: number;
         blackPixelRatio: number;
         thresholdStrategy?: string;
+        safeMode?: boolean;
         retryCount?: number;
         usedInvert?: boolean;
         finalThreshold?: number;
         finalBlackPixelRatio?: number;
+        page_for_search_path?: string;
+        page_for_search_metrics?: {
+            contrastScore: number;
+            blackPixelRatio: number;
+            anchorsDetected: number;
+            patternCandidatesDetected: number;
+        };
     };
     mockLayout?: MockDocumentLayout;
 }
@@ -427,10 +435,18 @@ export declare const ExtractionResultSchema: z.ZodObject<{
             deskewAngleDeg: z.ZodNumber;
             blackPixelRatio: z.ZodNumber;
             thresholdStrategy: z.ZodOptional<z.ZodString>;
+            safeMode: z.ZodOptional<z.ZodBoolean>;
             retryCount: z.ZodOptional<z.ZodNumber>;
             usedInvert: z.ZodOptional<z.ZodBoolean>;
             finalThreshold: z.ZodOptional<z.ZodNumber>;
             finalBlackPixelRatio: z.ZodOptional<z.ZodNumber>;
+            page_for_search_path: z.ZodOptional<z.ZodString>;
+            page_for_search_metrics: z.ZodOptional<z.ZodObject<{
+                contrastScore: z.ZodNumber;
+                blackPixelRatio: z.ZodNumber;
+                anchorsDetected: z.ZodNumber;
+                patternCandidatesDetected: z.ZodNumber;
+            }, z.core.$strip>>;
         }, z.core.$strip>>;
         field_debug: z.ZodOptional<z.ZodObject<{
             fio: z.ZodOptional<z.ZodOptional<z.ZodObject<{

@@ -1,0 +1,19 @@
+{
+  "field": "fio",
+  "passId": "A",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 306,
+    "y": 765,
+    "width": 2680,
+    "height": 49,
+    "page": 0
+  },
+  "psmList": [
+    6
+  ],
+  "before": "tmp/visual_baseline/20260302_204524/case1_reg/1772473834305_field-fio_pass-A_stage-tsv_mode-text_x306_y765_w2680_h49_before.png",
+  "after": "tmp/visual_baseline/20260302_204524/case1_reg/1772473834305_field-fio_pass-A_stage-tsv_mode-text_x306_y765_w2680_h49_after.png",
+  "overlay": "tmp/visual_baseline/20260302_204524/case1_reg/1772473834305_field-fio_pass-A_stage-tsv_mode-text_x306_y765_w2680_h49_overlay.png"
+}

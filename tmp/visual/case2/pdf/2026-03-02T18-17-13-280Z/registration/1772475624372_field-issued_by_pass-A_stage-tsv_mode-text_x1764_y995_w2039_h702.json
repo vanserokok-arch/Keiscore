@@ -1,0 +1,19 @@
+{
+  "field": "issued_by",
+  "passId": "A",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 1764,
+    "y": 995,
+    "width": 2039,
+    "height": 702,
+    "page": 0
+  },
+  "psmList": [
+    4
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T18-17-13-280Z/registration/1772475624372_field-issued_by_pass-A_stage-tsv_mode-text_x1764_y995_w2039_h702_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T18-17-13-280Z/registration/1772475624372_field-issued_by_pass-A_stage-tsv_mode-text_x1764_y995_w2039_h702_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T18-17-13-280Z/registration/1772475624372_field-issued_by_pass-A_stage-tsv_mode-text_x1764_y995_w2039_h702_overlay.png"
+}

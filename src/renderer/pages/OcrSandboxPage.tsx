@@ -351,6 +351,16 @@ export function OcrSandboxPage() {
               </button>
             </div>
           ) : null}
+          {runResult.artifactPaths.length > 0 ? (
+            <div className="error-block">
+              <p>Artifacts:</p>
+              {runResult.artifactPaths.map((artifactPath, index) => (
+                <p key={`artifact-${index}`} title={artifactPath}>
+                  {compactPath(artifactPath, 72)}
+                </p>
+              ))}
+            </div>
+          ) : null}
 
           {runResult.errors.length > 0 ? (
             <div className="error-block">
