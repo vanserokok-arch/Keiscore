@@ -116,6 +116,7 @@ describe("real pipeline units (mocked deps)", () => {
       pageCount: 1,
       requestedRange: { from: 0, to: 0 },
       resolvedRange0based: { from: 0, to: 0 },
+      rangeClamped: false,
       pdftoppmRange1based: { f: 1, l: 1 }
     });
     const pdftoppmRange = (normalizerAudit?.data as { pdftoppmRange1based?: { f: number; l: number } } | undefined)
@@ -126,10 +127,12 @@ describe("real pipeline units (mocked deps)", () => {
     expect(pdftoppmRange?.l).toBe((resolved?.to ?? 0) + 1);
   });
 
-  it("fails fast with INTERNAL_ERROR for invalid pdfPageRange using page-count preflight", async () => {
+  it("clamps out-of-range pdfPageRange and continues", async () => {
     const { execaMock } = setupMocks();
     const { FormatNormalizer } = await import("../format/formatNormalizer.js");
     vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
+    execaMock.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "ENOENT" }));
+    const logger = new InMemoryAuditLogger();
 
     const run = FormatNormalizer.normalize(
       {
@@ -137,55 +140,23 @@ describe("real pipeline units (mocked deps)", () => {
         filename: "doc.pdf",
         data: Buffer.from("%PDF-1.4")
       },
-      { pdfPageRange: { from: 1, to: 2 } },
-      new InMemoryAuditLogger()
+      { pdfPageRange: { from: 0, to: 3 } },
+      logger
     );
     await expect(run).rejects.toMatchObject({
-      coreError: {
-        code: "INTERNAL_ERROR",
-        message: expect.stringContaining("Invalid PDF page range"),
-        details: {
-          pageCount: 1,
-          requestedRange: { from: 1, to: 2 }
-        }
-      }
+      coreError: { code: "ENGINE_UNAVAILABLE" }
     });
-    expect(execaMock).not.toHaveBeenCalled();
-  });
-
-  it("fails fast with INTERNAL_ERROR for boundary invalid pdfPageRange values", async () => {
-    const badRanges = [
-      { from: 0, to: 1 },
-      { from: -1, to: 0 },
-      { from: 1, to: 0 },
-      { from: 1, to: 1 }
-    ];
-    for (const requestedRange of badRanges) {
-      const { execaMock } = setupMocks();
-      const { FormatNormalizer } = await import("../format/formatNormalizer.js");
-      vi.spyOn(FormatNormalizer as unknown as { getPdfPageCount: (sourcePath: string) => Promise<number> }, "getPdfPageCount").mockResolvedValueOnce(1);
-
-      const run = FormatNormalizer.normalize(
-        {
-          kind: "buffer",
-          filename: "doc.pdf",
-          data: Buffer.from("%PDF-1.4")
-        },
-        { pdfPageRange: requestedRange },
-        new InMemoryAuditLogger()
-      );
-      await expect(run).rejects.toMatchObject({
-        coreError: {
-          code: "INTERNAL_ERROR",
-          message: "Invalid PDF page range.",
-          details: {
-            pageCount: 1,
-            requestedRange
-          }
-        }
-      });
-      expect(execaMock).not.toHaveBeenCalled();
-    }
+    const normalizerAudit = logger.getEvents().find(
+      (event) => event.stage === "normalizer" && event.message === "PDF page range resolved."
+    );
+    expect(normalizerAudit?.data).toMatchObject({
+      pageCount: 1,
+      requestedRange: { from: 0, to: 3 },
+      resolvedRange0based: { from: 0, to: 0 },
+      rangeClamped: true,
+      pdftoppmRange1based: { f: 1, l: 1 }
+    });
+    expect(execaMock).toHaveBeenCalled();
   });
 
   it("preserves structured errors thrown during pdftoppm call", async () => {

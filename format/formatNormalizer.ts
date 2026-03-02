@@ -393,7 +393,12 @@ export class FormatNormalizer {
         ? null
         : { from: Math.floor(opts.pdfPageRange.from), to: Math.floor(opts.pdfPageRange.to) };
     const pageCount = await this.getPdfPageCount(sourcePath);
-    const resolvedRange0based = resolvePdfPageRange0Based(sourcePath, pageCount, requestedRange);
+    const { from: resolvedFrom, to: resolvedTo, rangeClamped } = resolvePdfPageRange0Based(
+      sourcePath,
+      pageCount,
+      requestedRange
+    );
+    const resolvedRange0based = { from: resolvedFrom, to: resolvedTo };
     const pdftoppmFrom = resolvedRange0based.from + 1;
     const pdftoppmTo = resolvedRange0based.to + 1;
     logger?.log({
@@ -405,6 +410,7 @@ export class FormatNormalizer {
         pageCount,
         requestedRange,
         resolvedRange0based,
+        rangeClamped,
         pdftoppmRange1based: { f: pdftoppmFrom, l: pdftoppmTo }
       }
     });
@@ -683,7 +689,7 @@ function resolvePdfPageRange0Based(
   sourcePath: string,
   pageCount: number,
   requestedRange: { from: number; to: number } | null
-): { from: number; to: number } {
+): { from: number; to: number; rangeClamped: boolean } {
   const suggestedRange0based = { from: 0, to: Math.max(0, pageCount - 1) };
   if (!Number.isInteger(pageCount) || pageCount < 1) {
     throwStructuredError({
@@ -696,30 +702,14 @@ function resolvePdfPageRange0Based(
     });
   }
   if (requestedRange === null) {
-    return suggestedRange0based;
+    return { ...suggestedRange0based, rangeClamped: false };
   }
   const { from, to } = requestedRange;
-  const isValid =
-    Number.isInteger(from) &&
-    Number.isInteger(to) &&
-    from >= 0 &&
-    to >= from &&
-    from < pageCount &&
-    to < pageCount;
-  if (isValid) {
-    return { from, to };
-  }
-  throwStructuredError({
-    code: "INTERNAL_ERROR",
-    message: "Invalid PDF page range.",
-    details: {
-      sourcePath,
-      pageCount,
-      requestedRange,
-      suggestedRange0based,
-      pdftoppmRange1basedAttempt: { f: from + 1, l: to + 1 }
-    }
-  });
+  const maxPage = pageCount - 1;
+  const clampedFrom = Math.max(0, Math.min(maxPage, from));
+  const clampedTo = Math.max(clampedFrom, Math.max(0, Math.min(maxPage, to)));
+  const rangeClamped = clampedFrom !== from || clampedTo !== to;
+  return { from: clampedFrom, to: clampedTo, rangeClamped };
 }
 
 function parseMockLayout(buffer: Buffer): MockDocumentLayout | undefined {
