@@ -330,6 +330,19 @@ export function OcrSandboxPage() {
             )}
           </div>
 
+          <div className="norm-block">
+            {runResult.sourceRows.length === 0 ? (
+              <p className="diag-summary">Sources: нет данных</p>
+            ) : (
+              runResult.sourceRows.map((row) => (
+                <p className="diag-summary" key={row.source}>
+                  {row.source}: kind={row.sourceKind} | original={compactPath(row.originalPath, 64)} | convertedPdf=
+                  {row.convertedPdfPath === null ? "-" : compactPath(row.convertedPdfPath, 64)}
+                </p>
+              ))
+            )}
+          </div>
+
           {runResult.debugDir ? (
             <div className="debug-link-row">
               <span title={runResult.debugDir}>DebugDir: {compactPath(runResult.debugDir, 52)}</span>

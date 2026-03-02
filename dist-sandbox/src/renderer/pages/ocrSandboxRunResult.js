@@ -30,6 +30,7 @@ export function mapRunResultToUi(lastResult, thrownError) {
             errors: [error],
             fieldRows: [],
             normalizationRows: [],
+            sourceRows: [],
             debugDir: null
         };
     }
@@ -39,6 +40,7 @@ export function mapRunResultToUi(lastResult, thrownError) {
             errors: [],
             fieldRows: [],
             normalizationRows: [],
+            sourceRows: [],
             debugDir: null
         };
     }
@@ -48,6 +50,7 @@ export function mapRunResultToUi(lastResult, thrownError) {
             errors: [lastResult.error],
             fieldRows: [],
             normalizationRows: [],
+            sourceRows: [],
             debugDir: null
         };
     }
@@ -102,11 +105,29 @@ export function mapRunResultToUi(lastResult, thrownError) {
                 : String(data.diagnostics.registration.normalization.retryCount)
         });
     }
+    const sourceRows = [];
+    if (data.diagnostics.passport) {
+        sourceRows.push({
+            source: "passport",
+            originalPath: data.diagnostics.passport.originalPath,
+            sourceKind: data.diagnostics.passport.sourceKind ?? "pdf",
+            convertedPdfPath: data.diagnostics.passport.convertedPdfPath ?? null
+        });
+    }
+    if (data.diagnostics.registration) {
+        sourceRows.push({
+            source: "registration",
+            originalPath: data.diagnostics.registration.originalPath,
+            sourceKind: data.diagnostics.registration.sourceKind ?? "pdf",
+            convertedPdfPath: data.diagnostics.registration.convertedPdfPath ?? null
+        });
+    }
     return {
         rawJson: JSON.stringify(lastResult, null, 2),
         errors: data.errors ?? [],
         fieldRows,
         normalizationRows,
+        sourceRows,
         debugDir: data.debugDir
     };
 }

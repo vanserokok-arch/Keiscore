@@ -59,7 +59,7 @@ export const SandboxFieldDiagSchema = z.object({
 });
 
 export const SandboxSourceDiagnosticsSchema = z.object({
-  sourcePath: z.string(),
+  originalPath: z.string(),
   sourceKind: z.enum(["pdf", "png"]).optional(),
   convertedPdfPath: z.string().nullable().optional(),
   confidence_score: z.number(),

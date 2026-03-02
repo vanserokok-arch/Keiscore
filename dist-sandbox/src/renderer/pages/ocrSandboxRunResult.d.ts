@@ -19,6 +19,12 @@ export type UiRunResult = {
     errors: SandboxError[];
     fieldRows: FieldDiagRow[];
     normalizationRows: NormRow[];
+    sourceRows: Array<{
+        source: "passport" | "registration";
+        originalPath: string;
+        sourceKind: "pdf" | "png";
+        convertedPdfPath: string | null;
+    }>;
     debugDir: string | null;
 };
 export declare function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownError: unknown | null): UiRunResult;

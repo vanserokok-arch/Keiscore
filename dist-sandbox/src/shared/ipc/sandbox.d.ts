@@ -67,7 +67,7 @@ export declare const SandboxFieldDiagSchema: z.ZodObject<{
     best_candidate_preview: z.ZodString;
 }, z.core.$strip>;
 export declare const SandboxSourceDiagnosticsSchema: z.ZodObject<{
-    sourcePath: z.ZodString;
+    originalPath: z.ZodString;
     sourceKind: z.ZodOptional<z.ZodEnum<{
         pdf: "pdf";
         png: "png";
@@ -102,7 +102,7 @@ export declare const SandboxMergedDiagnosticsSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const SandboxDiagnosticsSchema: z.ZodObject<{
     passport: z.ZodOptional<z.ZodObject<{
-        sourcePath: z.ZodString;
+        originalPath: z.ZodString;
         sourceKind: z.ZodOptional<z.ZodEnum<{
             pdf: "pdf";
             png: "png";
@@ -132,7 +132,7 @@ export declare const SandboxDiagnosticsSchema: z.ZodObject<{
         debugDir: z.ZodNullable<z.ZodString>;
     }, z.core.$strip>>;
     registration: z.ZodOptional<z.ZodObject<{
-        sourcePath: z.ZodString;
+        originalPath: z.ZodString;
         sourceKind: z.ZodOptional<z.ZodEnum<{
             pdf: "pdf";
             png: "png";
@@ -179,7 +179,7 @@ export declare const SandboxRunOcrResponseSchema: z.ZodObject<{
     debugDir: z.ZodString;
     diagnostics: z.ZodObject<{
         passport: z.ZodOptional<z.ZodObject<{
-            sourcePath: z.ZodString;
+            originalPath: z.ZodString;
             sourceKind: z.ZodOptional<z.ZodEnum<{
                 pdf: "pdf";
                 png: "png";
@@ -209,7 +209,7 @@ export declare const SandboxRunOcrResponseSchema: z.ZodObject<{
             debugDir: z.ZodNullable<z.ZodString>;
         }, z.core.$strip>>;
         registration: z.ZodOptional<z.ZodObject<{
-            sourcePath: z.ZodString;
+            originalPath: z.ZodString;
             sourceKind: z.ZodOptional<z.ZodEnum<{
                 pdf: "pdf";
                 png: "png";
@@ -392,7 +392,7 @@ export declare const SandboxRunOcrResultSchema: z.ZodUnion<readonly [z.ZodObject
         debugDir: z.ZodString;
         diagnostics: z.ZodObject<{
             passport: z.ZodOptional<z.ZodObject<{
-                sourcePath: z.ZodString;
+                originalPath: z.ZodString;
                 sourceKind: z.ZodOptional<z.ZodEnum<{
                     pdf: "pdf";
                     png: "png";
@@ -422,7 +422,7 @@ export declare const SandboxRunOcrResultSchema: z.ZodUnion<readonly [z.ZodObject
                 debugDir: z.ZodNullable<z.ZodString>;
             }, z.core.$strip>>;
             registration: z.ZodOptional<z.ZodObject<{
-                sourcePath: z.ZodString;
+                originalPath: z.ZodString;
                 sourceKind: z.ZodOptional<z.ZodEnum<{
                     pdf: "pdf";
                     png: "png";

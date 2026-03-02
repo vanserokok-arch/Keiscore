@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolvePathInsideRoot } from "../src/main/sandbox-fixtures.js";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resolveFixturePath } from "../src/main/sandbox-fixtures.js";
 import type { SandboxRunOcrResult } from "../src/shared/ipc/sandbox.js";
 import { mapRunResultToUi } from "../src/renderer/pages/ocrSandboxRunResult.js";
 
@@ -28,10 +31,27 @@ describe("sandbox ui run-result mapper", () => {
 });
 
 describe("sandbox fixture path resolver", () => {
-  it("resolves fixture path only inside fixtures root and blocks traversal", () => {
-    const root = "/tmp/keiscore/fixtures";
-    const allowed = resolvePathInsideRoot(root, "case1/pdf/passport.pdf");
-    expect(allowed).toBe("/tmp/keiscore/fixtures/case1/pdf/passport.pdf");
-    expect(() => resolvePathInsideRoot(root, "../outside.pdf")).toThrow("Path escapes allowed root.");
+  it("blocks traversal caseId with SECURITY_VIOLATION", async () => {
+    await expect(resolveFixturePath("../..", "pdf", "passport")).rejects.toMatchObject({
+      code: "SECURITY_VIOLATION"
+    });
+  });
+
+  it("resolves case1/pdf to canonical filename, then falls back to legacy 1.pdf", async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), "keiscore-fixtures-test-"));
+    try {
+      await mkdir(join(fixtureRoot, "case1/pdf"), { recursive: true });
+      await writeFile(join(fixtureRoot, "case1/pdf/passport.pdf"), Buffer.from("primary"));
+      await writeFile(join(fixtureRoot, "case1/pdf/1.pdf"), Buffer.from("fallback"));
+
+      const canonical = await resolveFixturePath("case1", "pdf", "passport", fixtureRoot);
+      expect(canonical.relativePath).toBe("fixtures/case1/pdf/passport.pdf");
+
+      await rm(join(fixtureRoot, "case1/pdf/passport.pdf"));
+      const fallback = await resolveFixturePath("case1", "pdf", "passport", fixtureRoot);
+      expect(fallback.relativePath).toBe("fixtures/case1/pdf/1.pdf");
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
   });
 });

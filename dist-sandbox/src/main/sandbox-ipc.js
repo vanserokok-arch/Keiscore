@@ -1,10 +1,10 @@
-import { lstat, mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { dialog, ipcMain, shell } from "electron";
-import sharp from "sharp";
+import { PDFDocument } from "pdf-lib";
 import { extractRfInternalPassport } from "../../index.js";
-import { resolveFixturePairPaths, resolveRepoRoot, validateSafeInputFile } from "./sandbox-fixtures.js";
+import { resolveFixturePairPaths, validateSafeInputFile } from "./sandbox-fixtures.js";
 import { SandboxOpenPathRequestSchema, SandboxOpenPathResultSchema, SandboxPickPdfResultSchema, SandboxPickPdfResponseSchema, SandboxRunOcrFixturesRequestSchema, SandboxRunOcrResultSchema, SandboxRunOcrRequestSchema, SandboxRunOcrResponseSchema } from "../shared/ipc/sandbox.js";
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".png"]);
 const ALLOWED_ERROR_CODES = new Set([
@@ -20,7 +20,6 @@ const ALLOWED_ERROR_CODES = new Set([
 ]);
 const OCR_TIMEOUT_MS = 30_000;
 const FIELD_ORDER = ["fio", "passport_number", "issued_by", "dept_code", "registration"];
-const REPO_ROOT = resolveRepoRoot(import.meta.url);
 function toCoreError(error) {
     if (typeof error === "object" &&
         error !== null &&
@@ -176,11 +175,28 @@ async function runSubOcr(source, path, debugDir, ocrVariant, pdfPageRange) {
         return { ok: false, result: emptyResultWithError(structured), error: structured, debugDir };
     }
 }
-async function toPdfRuntimeInput(inputPath) {
+async function convertPngToSinglePagePdf(inputPath) {
+    const pngBytes = await readFile(inputPath);
+    const pdfDoc = await PDFDocument.create();
+    const embeddedPng = await pdfDoc.embedPng(pngBytes);
+    const page = pdfDoc.addPage([embeddedPng.width, embeddedPng.height]);
+    page.drawImage(embeddedPng, {
+        x: 0,
+        y: 0,
+        width: embeddedPng.width,
+        height: embeddedPng.height
+    });
+    const pdfBytes = await pdfDoc.save();
+    const tempDir = await mkdtemp(join(tmpdir(), "keiscore-fixtures-"));
+    const tempPdfPath = join(tempDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}.pdf`);
+    await writeFile(tempPdfPath, pdfBytes);
+    return tempPdfPath;
+}
+async function toPdfRuntimeInput(inputPath, originalPathForDiagnostics) {
     const ext = extname(inputPath).toLowerCase();
     if (ext === ".pdf") {
         return {
-            sourcePathForDiagnostics: inputPath,
+            sourcePathForDiagnostics: originalPathForDiagnostics ?? inputPath,
             sourceKind: "pdf",
             effectivePdfPath: inputPath,
             convertedPdfPath: null
@@ -189,12 +205,9 @@ async function toPdfRuntimeInput(inputPath) {
     if (ext !== ".png") {
         throw buildSecurityError("Unsupported file extension.", { path: inputPath, ext });
     }
-    const tempDir = await mkdtemp(join(tmpdir(), "keiscore-fixtures-"));
-    const tempPdfPath = join(tempDir, `${Date.now()}-${Math.random().toString(16).slice(2, 8)}.pdf`);
-    const pngToPdfPipeline = sharp(inputPath);
-    await pngToPdfPipeline.pdf().toFile(tempPdfPath);
+    const tempPdfPath = await convertPngToSinglePagePdf(inputPath);
     return {
-        sourcePathForDiagnostics: inputPath,
+        sourcePathForDiagnostics: originalPathForDiagnostics ?? inputPath,
         sourceKind: "png",
         effectivePdfPath: tempPdfPath,
         convertedPdfPath: tempPdfPath
@@ -250,7 +263,7 @@ async function runOcrPair(label, input) {
         confidence_score: Number.isFinite(confidenceScore) ? confidenceScore : 0,
         diagnostics: {
             passport: {
-                sourcePath: input.passport.sourcePathForDiagnostics,
+                originalPath: input.passport.sourcePathForDiagnostics,
                 sourceKind: input.passport.sourceKind,
                 convertedPdfPath: input.passport.convertedPdfPath,
                 confidence_score: passportRun.result.confidence_score,
@@ -260,7 +273,7 @@ async function runOcrPair(label, input) {
                 debugDir: passportRun.debugDir
             },
             registration: {
-                sourcePath: input.registration.sourcePathForDiagnostics,
+                originalPath: input.registration.sourcePathForDiagnostics,
                 sourceKind: input.registration.sourceKind,
                 convertedPdfPath: input.registration.convertedPdfPath,
                 confidence_score: registrationRun.result.confidence_score,
@@ -350,7 +363,7 @@ export function registerSandboxIpcHandlers() {
             const ocrVariant = request.ocrVariant ?? "v1";
             let resolvedFixtures;
             try {
-                resolvedFixtures = await resolveFixturePairPaths(REPO_ROOT, request.caseId, request.kind);
+                resolvedFixtures = await resolveFixturePairPaths(request.caseId, request.kind);
             }
             catch (error) {
                 throw buildSecurityError(error instanceof Error ? error.message : "Fixture validation failed.", {
@@ -359,8 +372,8 @@ export function registerSandboxIpcHandlers() {
                 });
             }
             return await runOcrPair("sandbox:runOcrFixtures", {
-                passport: await toPdfRuntimeInput(resolvedFixtures.passportPath),
-                registration: await toPdfRuntimeInput(resolvedFixtures.registrationPath),
+                passport: await toPdfRuntimeInput(resolvedFixtures.passport.absolutePath, resolvedFixtures.passport.relativePath),
+                registration: await toPdfRuntimeInput(resolvedFixtures.registration.absolutePath, resolvedFixtures.registration.relativePath),
                 ocrVariant,
                 debugDir: request.debugDir
             });

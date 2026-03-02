@@ -22,6 +22,12 @@ export type UiRunResult = {
   errors: SandboxError[];
   fieldRows: FieldDiagRow[];
   normalizationRows: NormRow[];
+  sourceRows: Array<{
+    source: "passport" | "registration";
+    originalPath: string;
+    sourceKind: "pdf" | "png";
+    convertedPdfPath: string | null;
+  }>;
   debugDir: string | null;
 };
 
@@ -58,6 +64,7 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
       errors: [error],
       fieldRows: [],
       normalizationRows: [],
+      sourceRows: [],
       debugDir: null
     };
   }
@@ -68,6 +75,7 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
       errors: [],
       fieldRows: [],
       normalizationRows: [],
+      sourceRows: [],
       debugDir: null
     };
   }
@@ -78,6 +86,7 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
       errors: [lastResult.error],
       fieldRows: [],
       normalizationRows: [],
+      sourceRows: [],
       debugDir: null
     };
   }
@@ -143,11 +152,30 @@ export function mapRunResultToUi(lastResult: SandboxRunOcrResult | null, thrownE
     });
   }
 
+  const sourceRows: UiRunResult["sourceRows"] = [];
+  if (data.diagnostics.passport) {
+    sourceRows.push({
+      source: "passport",
+      originalPath: data.diagnostics.passport.originalPath,
+      sourceKind: data.diagnostics.passport.sourceKind ?? "pdf",
+      convertedPdfPath: data.diagnostics.passport.convertedPdfPath ?? null
+    });
+  }
+  if (data.diagnostics.registration) {
+    sourceRows.push({
+      source: "registration",
+      originalPath: data.diagnostics.registration.originalPath,
+      sourceKind: data.diagnostics.registration.sourceKind ?? "pdf",
+      convertedPdfPath: data.diagnostics.registration.convertedPdfPath ?? null
+    });
+  }
+
   return {
     rawJson: JSON.stringify(lastResult, null, 2),
     errors: data.errors ?? [],
     fieldRows,
     normalizationRows,
+    sourceRows,
     debugDir: data.debugDir
   };
 }
