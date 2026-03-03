@@ -1,0 +1,134 @@
+{
+  "anchors": [
+    {
+      "label": "ФАМИЛИЯ",
+      "confidence": 0.9597,
+      "bbox": {
+        "x": 919,
+        "y": 2153,
+        "width": 151,
+        "height": 33
+      }
+    },
+    {
+      "label": "ИМЯ",
+      "confidence": 0.9556,
+      "bbox": {
+        "x": 920,
+        "y": 2376,
+        "width": 68,
+        "height": 32
+      }
+    },
+    {
+      "label": "ПОДРАЗД",
+      "confidence": 0.9239,
+      "bbox": {
+        "x": 1135,
+        "y": 882,
+        "width": 259,
+        "height": 30
+      }
+    },
+    {
+      "label": "ОТЧЕСТВО",
+      "confidence": 0.3916,
+      "bbox": {
+        "x": 920,
+        "y": 2497,
+        "width": 145,
+        "height": 25
+      }
+    },
+    {
+      "label": "ВЫДАН",
+      "confidence": 0.2865,
+      "bbox": {
+        "x": 464,
+        "y": 503,
+        "width": 149,
+        "height": 25
+      }
+    }
+  ],
+  "fio": {
+    "strategy": "anchor_lines",
+    "status": "rejected",
+    "reason": "FIO_STRICT_VALIDATOR_FAILED",
+    "anchorLabels": [
+      "ФАМИЛИЯ",
+      "ИМЯ",
+      "ОТЧЕСТВО"
+    ],
+    "slices": [
+      {
+        "key": "surname",
+        "anchorLabel": "ФАМИЛИЯ",
+        "anchorBBox": {
+          "x": 919,
+          "y": 2153,
+          "width": 151,
+          "height": 33
+        },
+        "roi": {
+          "x": 1090,
+          "y": 2138,
+          "width": 1476,
+          "height": 73,
+          "page": 0
+        },
+        "token": "ЕН",
+        "rawPreview": "ен не [0",
+        "accepted": true
+      },
+      {
+        "key": "name",
+        "anchorLabel": "ИМЯ",
+        "anchorBBox": {
+          "x": 920,
+          "y": 2376,
+          "width": 68,
+          "height": 32
+        },
+        "roi": {
+          "x": 1008,
+          "y": 2361,
+          "width": 1558,
+          "height": 72,
+          "page": 0
+        },
+        "token": "ОСЬ",
+        "rawPreview": "ось 0 М о",
+        "accepted": true
+      },
+      {
+        "key": "patronymic",
+        "anchorLabel": "ОТЧЕСТВО",
+        "anchorBBox": {
+          "x": 920,
+          "y": 2497,
+          "width": 145,
+          "height": 25
+        },
+        "roi": {
+          "x": 1085,
+          "y": 2482,
+          "width": 1481,
+          "height": 65,
+          "page": 0
+        },
+        "token": "ЕВ",
+        "rawPreview": "ев МЕ ва а в",
+        "accepted": true
+      }
+    ],
+    "assembled": "ЕН ОСЬ ЕВ",
+    "surnameQualityOk": false
+  },
+  "registration": {
+    "strategy": "anchor_below_sweep",
+    "status": "NOT_PRESENT_IN_DOCUMENT",
+    "reason": "REGISTRATION_ANCHOR_NOT_FOUND",
+    "sweeps": []
+  }
+}

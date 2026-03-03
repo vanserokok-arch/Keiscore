@@ -1,0 +1,59 @@
+{
+  "anchors": [
+    {
+      "label": "ФАМИЛИЯ",
+      "confidence": 0.9564,
+      "bbox": {
+        "x": 1018,
+        "y": 2308,
+        "width": 151,
+        "height": 29
+      }
+    },
+    {
+      "label": "ВЫДАН",
+      "confidence": 0.9335,
+      "bbox": {
+        "x": 561,
+        "y": 1015,
+        "width": 130,
+        "height": 30
+      }
+    },
+    {
+      "label": "ИМЯ",
+      "confidence": 0.8338,
+      "bbox": {
+        "x": 1008,
+        "y": 2547,
+        "width": 69,
+        "height": 28
+      }
+    },
+    {
+      "label": "ПОДРАЗД",
+      "confidence": 0.5342,
+      "bbox": {
+        "x": 1324,
+        "y": 1072,
+        "width": 266,
+        "height": 38
+      }
+    }
+  ],
+  "fio": {
+    "strategy": "anchor_lines",
+    "status": "missing_anchors",
+    "found": {
+      "surname": true,
+      "name": true,
+      "patronymic": false
+    }
+  },
+  "registration": {
+    "strategy": "anchor_below_sweep",
+    "status": "NOT_PRESENT_IN_DOCUMENT",
+    "reason": "REGISTRATION_ANCHOR_NOT_FOUND",
+    "sweeps": []
+  }
+}

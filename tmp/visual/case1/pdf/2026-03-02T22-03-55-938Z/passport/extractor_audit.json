@@ -1,0 +1,48 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "РОСС",
+    "ВЫДАН",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ОТЧЕСТВО",
+    "ПОЛ",
+    "ФАМИЛИЯ",
+    "ИМЯ",
+    "ПОДРАЗД",
+    "ВЫДАН",
+    "ОТЧЕСТВО"
+  ],
+  "fallbackUsed": false,
+  "fields": {
+    "passport_number": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "4027190481"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "092-006"
+    },
+    "fio": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "anchor-lines",
+      "bestCandidatePreview": "УРМИСТРОВ АРТМ РИЕВИС"
+    },
+    "issued_by": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "Г.САНКТ-ПЕТЕРБУРГУ И ЛЕНИНГРАДСКОЙ"
+    },
+    "registration": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": ""
+    }
+  }
+}

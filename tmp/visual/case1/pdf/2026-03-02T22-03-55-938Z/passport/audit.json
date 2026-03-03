@@ -1,0 +1,134 @@
+{
+  "anchors": [
+    {
+      "label": "ФАМИЛИЯ",
+      "confidence": 0.9628,
+      "bbox": {
+        "x": 957,
+        "y": 2241,
+        "width": 158,
+        "height": 34
+      }
+    },
+    {
+      "label": "ИМЯ",
+      "confidence": 0.9606,
+      "bbox": {
+        "x": 958,
+        "y": 2474,
+        "width": 71,
+        "height": 33
+      }
+    },
+    {
+      "label": "ПОДРАЗД",
+      "confidence": 0.6134,
+      "bbox": {
+        "x": 1182,
+        "y": 917,
+        "width": 270,
+        "height": 32
+      }
+    },
+    {
+      "label": "ВЫДАН",
+      "confidence": 0.6046,
+      "bbox": {
+        "x": 483,
+        "y": 522,
+        "width": 141,
+        "height": 27
+      }
+    },
+    {
+      "label": "ОТЧЕСТВО",
+      "confidence": 0.4196,
+      "bbox": {
+        "x": 958,
+        "y": 2599,
+        "width": 173,
+        "height": 27
+      }
+    }
+  ],
+  "fio": {
+    "strategy": "anchor_lines",
+    "status": "rejected",
+    "reason": "FIO_STRICT_VALIDATOR_FAILED",
+    "anchorLabels": [
+      "ФАМИЛИЯ",
+      "ИМЯ",
+      "ОТЧЕСТВО"
+    ],
+    "slices": [
+      {
+        "key": "surname",
+        "anchorLabel": "ФАМИЛИЯ",
+        "anchorBBox": {
+          "x": 957,
+          "y": 2241,
+          "width": 158,
+          "height": 34
+        },
+        "roi": {
+          "x": 1135,
+          "y": 2226,
+          "width": 1539,
+          "height": 74,
+          "page": 0
+        },
+        "token": "НИЕ",
+        "rawPreview": "НН ние = ББ [О",
+        "accepted": true
+      },
+      {
+        "key": "name",
+        "anchorLabel": "ИМЯ",
+        "anchorBBox": {
+          "x": 958,
+          "y": 2474,
+          "width": 71,
+          "height": 33
+        },
+        "roi": {
+          "x": 1049,
+          "y": 2459,
+          "width": 1625,
+          "height": 73,
+          "page": 0
+        },
+        "token": "ПЕ",
+        "rawPreview": "Пе М . о",
+        "accepted": true
+      },
+      {
+        "key": "patronymic",
+        "anchorLabel": "ОТЧЕСТВО",
+        "anchorBBox": {
+          "x": 958,
+          "y": 2599,
+          "width": 173,
+          "height": 27
+        },
+        "roi": {
+          "x": 1151,
+          "y": 2584,
+          "width": 1523,
+          "height": 67,
+          "page": 0
+        },
+        "token": "НО",
+        "rawPreview": "но о о Е 2 0",
+        "accepted": true
+      }
+    ],
+    "assembled": "НИЕ ПЕ НО",
+    "surnameQualityOk": false
+  },
+  "registration": {
+    "strategy": "anchor_below_sweep",
+    "status": "NOT_PRESENT_IN_DOCUMENT",
+    "reason": "REGISTRATION_ANCHOR_NOT_FOUND",
+    "sweeps": []
+  }
+}

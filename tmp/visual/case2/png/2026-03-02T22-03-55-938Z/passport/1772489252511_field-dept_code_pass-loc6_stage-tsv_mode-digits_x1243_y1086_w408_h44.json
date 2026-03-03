@@ -1,0 +1,19 @@
+{
+  "field": "dept_code",
+  "passId": "loc6",
+  "stage": "tsv",
+  "mode": "digits",
+  "roi": {
+    "x": 1243,
+    "y": 1086,
+    "width": 408,
+    "height": 44,
+    "page": 0
+  },
+  "psmList": [
+    7
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T22-03-55-938Z/passport/1772489252511_field-dept_code_pass-loc6_stage-tsv_mode-digits_x1243_y1086_w408_h44_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T22-03-55-938Z/passport/1772489252511_field-dept_code_pass-loc6_stage-tsv_mode-digits_x1243_y1086_w408_h44_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/png/2026-03-02T22-03-55-938Z/passport/1772489252511_field-dept_code_pass-loc6_stage-tsv_mode-digits_x1243_y1086_w408_h44_overlay.png"
+}

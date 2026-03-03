@@ -1,0 +1,45 @@
+{
+  "anchorsFoundCount": 4,
+  "anchorKeys": [
+    "ВЫДАН",
+    "РОСС",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "ПОДРАЗД",
+    "ВЫДАН",
+    "ОТЧЕСТВО"
+  ],
+  "fallbackUsed": false,
+  "fields": {
+    "passport_number": {
+      "roiSource": "anchor",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "5303202422"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "270-219"
+    },
+    "fio": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "anchor-lines",
+      "bestCandidatePreview": "АГОРОВ РОМАНКСЕРГЕЕВИ ИВАНОВИЧ"
+    },
+    "issued_by": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ГУ МВД РОССИИ ПО Г- САНКТ-ПЕТЕРБУРГУ И ЛЕНИНГРАДСКОЙ"
+    },
+    "registration": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": ""
+    }
+  }
+}

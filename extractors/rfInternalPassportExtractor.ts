@@ -779,28 +779,16 @@ function buildVariant2RoisFromAnchors(
   pageHeight: number
 ): Record<PassportField, RoiRect> {
   if (anchorBoxes === undefined) return current;
-  const fioAnchor = pickAnchorBoxByKey(anchorBoxes, "ФАМИЛИЯ");
   const issuedByAnchor = pickAnchorBoxByKey(anchorBoxes, "ВЫДАН");
   const deptAnchor = pickAnchorBoxByKey(anchorBoxes, "КОД ПОДРАЗДЕЛЕНИЯ");
   const regAnchor = pickAnchorBoxByKey(anchorBoxes, "МЕСТО ЖИТЕЛЬСТВА");
   return {
     ...current,
-    fio:
-      fioAnchor === undefined
-        ? current.fio
-        : makeRoi(pageWidth, pageHeight, current.fio.page, fioAnchor.x - 30, fioAnchor.y + fioAnchor.height + 18, 980, 260),
+    fio: current.fio,
     issued_by:
       issuedByAnchor === undefined
         ? current.issued_by
-        : makeRoi(
-            pageWidth,
-            pageHeight,
-            current.issued_by.page,
-            issuedByAnchor.x - 20,
-            issuedByAnchor.y + issuedByAnchor.height + 26,
-            clampIntValue(current.issued_by.width, 900, 1800),
-            clampIntValue(current.issued_by.height, 360, 980)
-          ),
+        : buildIssuedByRoiFromAnchor(issuedByAnchor, pageWidth, pageHeight, current.issued_by.page),
     passport_number:
       deptAnchor === undefined
         ? current.passport_number
@@ -1833,28 +1821,7 @@ function buildRoisFromSearchAndAnchors(
 
   const issuedAnchor = findAnchor("ВЫДАН", "КЕМ");
   if (issuedAnchor !== undefined) {
-    out.issued_by = makeRoi(
-      pageWidth,
-      pageHeight,
-      out.issued_by.page,
-      issuedAnchor.x - 40,
-      issuedAnchor.y + issuedAnchor.height + 16,
-      clampIntValue(Math.max(out.issued_by.width, 1200), 900, Math.max(900, pageWidth - 60)),
-      clampIntValue(Math.max(out.issued_by.height, 540), 380, 980)
-    );
-  }
-
-  const fioAnchor = findAnchor("ФАМИЛИЯ", "ОТЧЕСТВО", "ИМЯ");
-  if (fioAnchor !== undefined) {
-    out.fio = makeRoi(
-      pageWidth,
-      pageHeight,
-      out.fio.page,
-      fioAnchor.x - 420,
-      fioAnchor.y - 260,
-      clampIntValue(Math.max(out.fio.width, 1450), 1100, Math.max(1100, pageWidth - 60)),
-      clampIntValue(Math.max(out.fio.height, 520), 360, 880)
-    );
+    out.issued_by = buildIssuedByRoiFromAnchor(issuedAnchor, pageWidth, pageHeight, out.issued_by.page);
   }
 
   const deptAnchor = findAnchor("КОД", "ПОДРАЗД");
@@ -1932,10 +1899,18 @@ function validateRegistrationAnchorCandidate(raw: string): string | null {
 }
 
 function buildFioLineRoi(anchor: AnchorBox, pageWidth: number, pageHeight: number, page: number): RoiRect {
-  const x = anchor.x + anchor.width + 10;
-  const y = anchor.y - Math.round(anchor.height * 0.2);
-  const width = Math.max(260, pageWidth - x - 28);
-  const height = clampIntValue(anchor.height * 1.6, 34, 92);
+  const x = anchor.x + anchor.width + 20;
+  const y = anchor.y - 15;
+  const width = Math.max(260, pageWidth - x - 40);
+  const height = anchor.height + 40;
+  return makeRoi(pageWidth, pageHeight, page, x, y, width, height);
+}
+
+function buildIssuedByRoiFromAnchor(anchor: AnchorBox, pageWidth: number, pageHeight: number, page: number): RoiRect {
+  const x = anchor.x - 50;
+  const y = anchor.y + anchor.height + 10;
+  const width = Math.round(pageWidth * 0.8);
+  const height = 220;
   return makeRoi(pageWidth, pageHeight, page, x, y, width, height);
 }
 
@@ -1976,6 +1951,46 @@ async function ocrSingleLineToken(params: {
   const token = normalizeAnchorLineToken(bestRaw).split(" ").filter(Boolean).sort((a, b) => b.length - a.length)[0] ?? "";
   const validToken = /^[А-ЯЁЙ-]{2,}$/u.test(token) && !/\d/u.test(token) ? token : null;
   return { token: validToken, raw: String(bestRaw ?? "").trim(), roi: params.roi };
+}
+
+async function saveAnchorRoiDebugCrop(
+  pagePath: string,
+  roi: RoiRect,
+  debugDir: string,
+  name: string
+): Promise<void> {
+  if (debugDir === "") return;
+  const safeName = name.replace(/[^a-zA-Z0-9_-]+/gu, "_");
+  await cropToFile(pagePath, roi, join(debugDir, `${safeName}.png`)).catch(() => undefined);
+}
+
+function buildIssuedByAnchorCandidate(
+  words: TsvWord[],
+  issuedAnchor: SearchAnchorHit,
+  stopAnchor: SearchAnchorHit | null
+): {
+  value: string;
+  confidence: number;
+  lines: Array<{ y: number; text: string; avgConf: number }>;
+} | null {
+  const lines = groupWordsIntoLines(words)
+    .map((line) => ({
+      y: line.y,
+      text: normalizeRussianText(line.text).replace(/\s+/gu, " ").trim(),
+      avgConf: line.avgConf
+    }))
+    .filter((line) => line.text.length >= 4);
+  const yStart = issuedAnchor.bbox.y + issuedAnchor.bbox.height + 2;
+  const yStop = stopAnchor !== null ? stopAnchor.bbox.y - 4 : yStart + 360;
+  const selected = lines.filter((line) => line.y >= yStart && line.y <= yStop).slice(0, 8);
+  if (selected.length === 0) return null;
+  const joined = selected.map((line) => line.text).join(" ").replace(/\s+/gu, " ").trim();
+  if (joined.length < 8) return null;
+  return {
+    value: joined,
+    confidence: selected.reduce((sum, line) => sum + line.avgConf, 0) / selected.length,
+    lines: selected
+  };
 }
 
 async function resolveRoisWithAnchorFirst(
@@ -2685,6 +2700,7 @@ export class RfInternalPassportExtractor {
           ];
           for (const slice of slices) {
             const lineRoi = buildFioLineRoi(slice.anchor.bbox, width, height, roi.page);
+            await saveAnchorRoiDebugCrop(pagePath, lineRoi, debugDir, `anchor_roi_fio_${slice.key}`);
             const lineOcr = await ocrSingleLineToken({
               pagePath,
               roi: lineRoi,
@@ -2929,10 +2945,46 @@ export class RfInternalPassportExtractor {
       // issued_by
       {
         const field: PassportField = "issued_by";
-        const roi = rois[field];
+        let roi = rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
+        const issuedAnchor = searchAnchorHits.find((item) => item.label === "ВЫДАН") ?? null;
+        const deptStopAnchor =
+          searchAnchorHits.find((item) => item.label === "ПОДРАЗД") ??
+          searchAnchorHits.find((item) => item.label === "КОД") ??
+          null;
+        if (issuedAnchor !== null) {
+          const issuedAnchorRoi = buildIssuedByRoiFromAnchor(issuedAnchor.bbox, width, height, roi.page);
+          rois[field] = issuedAnchorRoi;
+          roi = issuedAnchorRoi;
+          await saveAnchorRoiDebugCrop(pagePath, issuedAnchorRoi, debugDir, "anchor_roi_issued_by");
+          const anchorCandidate = buildIssuedByAnchorCandidate(pageForSearchWords, issuedAnchor, deptStopAnchor);
+          if (anchorCandidate !== null) {
+            const normalized = normalizeRussianText(anchorCandidate.value);
+            attempts.push({
+              pass_id: "A",
+              raw_text_preview: normalized.slice(0, 120),
+              normalized_preview: normalized.slice(0, 120),
+              source: "page",
+              confidence: clamp01(Math.max(anchorCandidate.confidence, 0.34)),
+              psm: 6
+            });
+            ranked.push(
+              makeRankedCandidate({
+                field,
+                pass_id: "A",
+                source: "page",
+                psm: 6,
+                raw: normalized,
+                normalized,
+                confidence: clamp01(Math.max(anchorCandidate.confidence, 0.34)),
+                anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.94),
+                markerMatch: textMarkerScore(field, normalized)
+              })
+            );
+          }
+        }
         const pageIssuedByCandidates = buildIssuedByCandidatesFromTsvWords(pageForSearchWords).slice(0, 2);
         for (const candidate of pageIssuedByCandidates) {
           const normalized = normalizeRussianText(candidate.text);
@@ -3081,19 +3133,14 @@ export class RfInternalPassportExtractor {
         const attempts: NonNullable<FieldReport["attempts"]> = [];
         const ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-        const sourceName =
-          input.kind === "path"
-            ? input.path.toLowerCase()
-            : input.filename.toLowerCase();
-        const sourceLooksRegistration = sourceName.includes("registration") || sourceName.endsWith("/2.pdf") || sourceName.endsWith("\\2.pdf");
         const regAnchor =
           searchAnchorHits.find((item) => item.label === "МЕСТО ЖИТЕЛЬСТВА") ??
           searchAnchorHits.find((item) => item.label === "ЗАРЕГИСТРИРОВАН") ??
           null;
-        const canRunRegistrationAnchorFlow = sourceLooksRegistration || regAnchor !== null;
         const sweepAudit: Array<Record<string, unknown>> = [];
-        if (canRunRegistrationAnchorFlow && regAnchor !== null) {
+        if (regAnchor !== null) {
           const baseRegRoi = buildRegistrationRoiFromAnchor(regAnchor.bbox, width, height, roi.page);
+          await saveAnchorRoiDebugCrop(pagePath, baseRegRoi, debugDir, "anchor_roi_registration");
           const yOffsets: number[] = [];
           for (let offset = -200; offset <= 200; offset += 20) yOffsets.push(offset);
           yOffsets.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
@@ -3150,7 +3197,6 @@ export class RfInternalPassportExtractor {
           detailedAudit.registration = {
             strategy: "anchor_below_sweep",
             status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
-            sourceLooksRegistration,
             anchor: {
               label: regAnchor.label,
               bbox: regAnchor.bbox,
@@ -3159,28 +3205,11 @@ export class RfInternalPassportExtractor {
             sweeps: sweepAudit
           };
         } else {
-          const placeholderSweepRoi = roi;
-          const sweepCropPath = join(tmp, "registration_sweep_0_before.png");
-          const sweepPrePath = join(tmp, "registration_sweep_0_after.png");
-          await cropToFile(pagePath, placeholderSweepRoi, sweepCropPath);
-          await preprocessForOcr(sweepCropPath, sweepPrePath, "text_v2");
-          if (debugDir !== "") {
-            await sharp(sweepCropPath).png().toFile(join(debugDir, "registration_sweep_0_before.png")).catch(() => undefined);
-            await sharp(sweepPrePath).png().toFile(join(debugDir, "registration_sweep_0_after.png")).catch(() => undefined);
-          }
           detailedAudit.registration = {
             strategy: "anchor_below_sweep",
-            status: "skipped",
-            reason: regAnchor === null ? "REGISTRATION_ANCHOR_NOT_FOUND" : "SOURCE_NOT_REGISTRATION",
-            sourceLooksRegistration,
-            sweeps: [
-              {
-                yOffset: 0,
-                roi: placeholderSweepRoi,
-                validatorPassed: false,
-                rejectionReason: regAnchor === null ? "REGISTRATION_ANCHOR_NOT_FOUND" : "SOURCE_NOT_REGISTRATION"
-              }
-            ]
+            status: "NOT_PRESENT_IN_DOCUMENT",
+            reason: "REGISTRATION_ANCHOR_NOT_FOUND",
+            sweeps: []
           };
         }
         const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);

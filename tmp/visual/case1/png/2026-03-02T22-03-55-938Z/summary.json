@@ -1,0 +1,24 @@
+{
+  "caseId": "case1",
+  "kind": "png",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T22-03-55-938Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T22-03-55-938Z/passport.from-png.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/png/2026-03-02T22-03-55-938Z/registration.from-png.pdf"
+  },
+  "confirmed": {
+    "fio": false,
+    "passport_number": true,
+    "issued_by": true,
+    "dept_code": true,
+    "registration": true
+  },
+  "confirmedCount": 4,
+  "passportFields": {
+    "fio": null,
+    "passport_number": "4027 №190481",
+    "issued_by": "Г.САНКТ-ПЕТЕРБУРГУ ЛЕНИНГРАДСКОЙ",
+    "dept_code": "780-006"
+  },
+  "registrationField": "ЗАРЕГИСТРИРОВАН ЯНВАРЯ 2О19 Г. САНКТ-ПЕТЕРБУРГ ПАРГОЛОВО"
+}

@@ -1,0 +1,19 @@
+{
+  "field": "fio",
+  "passId": "B",
+  "stage": "tsv",
+  "mode": "text",
+  "roi": {
+    "x": 231,
+    "y": 1705,
+    "width": 2025,
+    "height": 56,
+    "page": 0
+  },
+  "psmList": [
+    11
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T22-03-55-938Z/passport/1772489189455_field-fio_pass-B_stage-tsv_mode-text_x231_y1705_w2025_h56_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T22-03-55-938Z/passport/1772489189455_field-fio_pass-B_stage-tsv_mode-text_x231_y1705_w2025_h56_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T22-03-55-938Z/passport/1772489189455_field-fio_pass-B_stage-tsv_mode-text_x231_y1705_w2025_h56_overlay.png"
+}

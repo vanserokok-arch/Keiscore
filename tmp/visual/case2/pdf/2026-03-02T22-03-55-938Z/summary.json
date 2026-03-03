@@ -1,0 +1,24 @@
+{
+  "caseId": "case2",
+  "kind": "pdf",
+  "root": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case2/pdf/2026-03-02T22-03-55-938Z",
+  "inputs": {
+    "passport": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case2/pdf/passport.pdf",
+    "registration": "/Users/evgenijtazelnikov/Documents/KEIScore/fixtures/case2/pdf/registration.pdf"
+  },
+  "confirmed": {
+    "fio": true,
+    "passport_number": true,
+    "issued_by": true,
+    "dept_code": true,
+    "registration": false
+  },
+  "confirmedCount": 4,
+  "passportFields": {
+    "fio": "АГОРОВ РОМАНК СЕРГЕЕВИЧ",
+    "passport_number": "4026 №737728",
+    "issued_by": "ГУ МВД РОССИИ ПО",
+    "dept_code": "270-219"
+  },
+  "registrationField": null
+}

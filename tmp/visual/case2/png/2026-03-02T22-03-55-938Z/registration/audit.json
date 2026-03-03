@@ -1,0 +1,627 @@
+{
+  "anchors": [
+    {
+      "label": "МЕСТО ЖИТЕЛЬСТВА",
+      "confidence": 0.893,
+      "bbox": {
+        "x": 2232,
+        "y": 367,
+        "width": 805,
+        "height": 73
+      }
+    }
+  ],
+  "fio": {
+    "strategy": "anchor_lines",
+    "status": "missing_anchors",
+    "found": {
+      "surname": false,
+      "name": false,
+      "patronymic": false
+    }
+  },
+  "registration": {
+    "strategy": "anchor_below_sweep",
+    "status": "rejected",
+    "anchor": {
+      "label": "МЕСТО ЖИТЕЛЬСТВА",
+      "bbox": {
+        "x": 2232,
+        "y": 367,
+        "width": 805,
+        "height": 73
+      },
+      "confidence": 0.893
+    },
+    "sweeps": [
+      {
+        "yOffset": 0,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 454,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ . АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КЁ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 0,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 454,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "О ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ СА 1 ЛИТЕР К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -20,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 434,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ . АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КА.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -20,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 434,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ПЬЕТ ЖЕ ЗАРЕГИСТРИРОВ 29.О6.2О21 НКТ-ПЕТЕРБУРГ 1 ЛИТЕР СА К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 20,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 474,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "29.О6.2О21 НКТ-ПЕТЕРБУРГ , АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КВ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 20,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 474,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "РИ ВАН О 29.О6.2О21 НКТ-ПЕТЕРБУРГ СА 1 ЛИТЕР К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -40,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 414,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "И М 1 ГЛ ЩО ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ, АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КЁ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -40,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 414,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ТТ 9 МР ЗОВИ В БА ЩО ЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ СА 1 ЛИТЕР К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 40,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 494,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЕО СЕ ВА Д. 5 МЕ ЗЕН 29.О6.2О21 НКТ-ПЕТЕРБУРГ , АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КВ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 40,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 494,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "О ЫЬ ЖА Д. КОМЕ И, 29.О6.2О21 НКТ-ПЕТЕРБУРГ 1 ЛИТЕР СА К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -60,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 394,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЯЧ ИТЕЛАЬСТВА А АЕТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 1 ЛИТЕРА А, КЁ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -60,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 394,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "7 И ГЕАБСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ , 1 ЛИТЕР ХАРМСА, Д. К 1",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 60,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 514,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "М 28 ЗРЗВРЛАГЯ 29.О6.2О21 НКТ-ПЕТЕРБУРГ , АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КВ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 60,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 514,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "О ЖА 29.О6. 2О21. НКТ-ПЕТЕРБУРГ , 1 ЛИТЕР ХАРМСА, Д. К",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -80,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 374,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЕС ТО ЖИТЕЛ ЬСТВА К АРСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ , АНИИЛА ХАРМСА Д. 1 ЛИТЕРА АД Р",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -80,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 374,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЕС ТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ 1 ЛИТЕР -",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 80,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 534,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "29.О6.2О21 НКТ-ПЕТЕРБУРГ . АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КА.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 80,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 534,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "О 29.О6.2О21 НКТ-ПЕТЕРБУРГ СА 1 ЛИТЕР К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -100,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 354,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТ КАБСТВА АЙ ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ АНИИЛА ХАРМСА Д.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -100,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 354,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ 1 ПИТЕР ХАРМСА, Д. -",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 100,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 554,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "72.96.2О21 НКТ-ПЕТЕРБУРГ , АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КВ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 100,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 554,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "7.6.2О НКТ-ПЕТЕРБУРГ , 1 ЛИТЕР ХАРМСА, Д. К",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -120,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 334,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА О ЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ .",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -120,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 334,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ АНИИЛА ХАРМСА ПЛ. - М",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 120,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 574,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "НКТ-ПЕТЕРБУРГ , АНИИЛА ХАРМСА Д. 1 ЛИТЕРА А, КВ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 120,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 574,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "НКТ-ПЕТЕРБУРГ СА 1 ЛИТЕР К 8.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -140,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 314,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖН ТЕЛЬСТВА А ИЕАЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ, АНИИЛА ХАРМСА П",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -140,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 314,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬ ХЕ ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 А НКТ-ПЕТЕРБУРГ , А ХАРМС А П ЕЕ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 140,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 594,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "1 ЛИТЕРА А, КЁ.",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 140,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 594,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "НКТ-ПЕТЕРБУРГ, ХАРМСА, Д. 1 ЛИТЕР К У РУ УЛ ДО РА",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -160,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 294,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.ОБ. 2О21 НКТ-ПЕТЕРБУРГ . АНМИПА УЛЕТ РН",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -160,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 294,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ ПЕТЕ РБУРГ, 1 ТЪЛ. 9 Д",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 160,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 614,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "АНИИЛА ХАВИ Д 1 ЛИТЕРА А, КЁ. ИР ГПО ПЛИТЕ 4. О",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 160,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 614,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "АТ-ПЕТЕРБУРГ, 1 ЛИТЕР ХАРМСА, Д. К ИР ГПО ПЛИТЕ 4. О",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -180,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 274,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТ КАБСТВА КЕ ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРБУРГ .",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -180,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 274,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-П А УТРЛТЕ- ЕТЕРБУРГ. 2 А",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 180,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 634,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "Т 6 РГ, АНИИЛА ХАРМСА Д. ИЕ ПО ОФОРМПЕНИИ РННУЗПЕНИГЫ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 180,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 634,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "148. 51 --БУРРГ ХАРМСА Д 1 ЛИТ ИЕ ПО ОРТ РННУЗПЕНИГЫ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -200,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 254,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖЖ ИТЕЛЬСТВ А О ЕАЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРРУБЕ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": -200,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 254,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "МЕСТО ЖИТЕЛЬСТВА ЗАРЕГИСТРИРОВАН 29.О6.2О21 НКТ-ПЕТЕРРУБЕ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 200,
+        "psm": 6,
+        "roi": {
+          "x": 2220,
+          "y": 654,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "И Ч ЧАРА О 22 КА, АНИИЛА ХАРМСА Д. 2. ЙЕ ПО ОФОРИПЕНИЮ ВНУТРЕННИХ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      },
+      {
+        "yOffset": 200,
+        "psm": 11,
+        "roi": {
+          "x": 2220,
+          "y": 654,
+          "width": 1525,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЧР ЭТ 4 АКАД, ДЗЬЙ ЛА Х ХАРМСА, Я. 1 ЛИТЕР К ЙЕ ПО ОФОРИПЕНИИ ВНУТРЕННИХ",
+        "validatorPassed": false,
+        "rejectionReason": "REGISTRATION_VALIDATOR_FAILED"
+      }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "anchorsFoundCount": 5,
+  "anchorKeys": [
+    "МЕСТО ЖИТЕЛЬСТВА",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ВЫДАН",
+    "МЕСТО ЖИТЕЛЬСТВА"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": ""
+    },
+    "dept_code": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "290-620"
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "anchor-lines",
+      "bestCandidatePreview": "А А О МУ -Я СП ЩЕ А"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ОПВЫ УМВА РОССИИ ПО КРАСНОГ ВАРДЕЙСКОНУ"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "М1 1 ЕРБУРГ, АНИИЛА ХАРМСА Д. О В ИЕ ПО П ТТУ ТАРО"
+    }
+  }
+}

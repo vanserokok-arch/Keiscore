@@ -1,0 +1,49 @@
+{
+  "anchors": [
+    {
+      "label": "ПОДРАЗД",
+      "confidence": 0.9402,
+      "bbox": {
+        "x": 1273,
+        "y": 1027,
+        "width": 255,
+        "height": 37
+      }
+    },
+    {
+      "label": "ВЫДАН",
+      "confidence": 0.875,
+      "bbox": {
+        "x": 540,
+        "y": 973,
+        "width": 125,
+        "height": 28
+      }
+    },
+    {
+      "label": "ОТЧЕСТВО",
+      "confidence": 0.147,
+      "bbox": {
+        "x": 963,
+        "y": 2560,
+        "width": 143,
+        "height": 29
+      }
+    }
+  ],
+  "fio": {
+    "strategy": "anchor_lines",
+    "status": "missing_anchors",
+    "found": {
+      "surname": false,
+      "name": false,
+      "patronymic": true
+    }
+  },
+  "registration": {
+    "strategy": "anchor_below_sweep",
+    "status": "NOT_PRESENT_IN_DOCUMENT",
+    "reason": "REGISTRATION_ANCHOR_NOT_FOUND",
+    "sweeps": []
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "anchors": [
+    {
+      "label": "ПОДРАЗД",
+      "confidence": 0.9076,
+      "bbox": {
+        "x": 2599,
+        "y": 1270,
+        "width": 307,
+        "height": 51
+      }
+    },
+    {
+      "label": "ЗАРЕГИСТРИРОВАН",
+      "confidence": 0.8383,
+      "bbox": {
+        "x": 271,
+        "y": 327,
+        "width": 3185,
+        "height": 216
+      }
+    },
+    {
+      "label": "МЕСТО ЖИТЕЛЬСТВА",
+      "confidence": 0.9494,
+      "bbox": {
+        "x": 2466,
+        "y": 336,
+        "width": 791,
+        "height": 83
+      }
+    }
+  ],
+  "fio": {
+    "strategy": "anchor_lines",
+    "status": "missing_anchors",
+    "found": {
+      "surname": false,
+      "name": false,
+      "patronymic": false
+    }
+  },
+  "registration": {
+    "strategy": "anchor_below_sweep",
+    "status": "accepted",
+    "anchor": {
+      "label": "МЕСТО ЖИТЕЛЬСТВА",
+      "bbox": {
+        "x": 2466,
+        "y": 336,
+        "width": 791,
+        "height": 83
+      },
+      "confidence": 0.9494
+    },
+    "sweeps": [
+      {
+        "yOffset": 0,
+        "psm": 6,
+        "roi": {
+          "x": 2454,
+          "y": 433,
+          "width": 1354,
+          "height": 420,
+          "page": 0
+        },
+        "candidatePreview": "ЗАРЕГИСТРИРОВАН ЯНВАРЯ 2О19 Г. САНКТ-ПЕТЕРБУРГ ПАРГОЛОВО",
+        "validatorPassed": true,
+        "rejectionReason": null
+      }
+    ]
+  }
+}

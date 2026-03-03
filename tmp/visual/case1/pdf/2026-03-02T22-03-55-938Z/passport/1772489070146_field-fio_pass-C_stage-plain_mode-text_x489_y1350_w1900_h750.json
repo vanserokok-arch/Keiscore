@@ -1,0 +1,19 @@
+{
+  "field": "fio",
+  "passId": "C",
+  "stage": "plain",
+  "mode": "text",
+  "roi": {
+    "x": 489,
+    "y": 1350,
+    "width": 1900,
+    "height": 750,
+    "page": 0
+  },
+  "psmList": [
+    6
+  ],
+  "before": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T22-03-55-938Z/passport/1772489070146_field-fio_pass-C_stage-plain_mode-text_x489_y1350_w1900_h750_before.png",
+  "after": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T22-03-55-938Z/passport/1772489070146_field-fio_pass-C_stage-plain_mode-text_x489_y1350_w1900_h750_after.png",
+  "overlay": "/Users/evgenijtazelnikov/Documents/KEIScore/tmp/visual/case1/pdf/2026-03-02T22-03-55-938Z/passport/1772489070146_field-fio_pass-C_stage-plain_mode-text_x489_y1350_w1900_h750_overlay.png"
+}

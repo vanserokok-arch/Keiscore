@@ -1,0 +1,46 @@
+{
+  "anchorsFoundCount": 4,
+  "anchorKeys": [
+    "ВЫДАН",
+    "РОСС",
+    "ФАМИЛИЯ",
+    "КОД ПОДРАЗДЕЛЕНИЯ",
+    "ФАМИЛИЯ",
+    "ВЫДАН",
+    "ИМЯ",
+    "ПОДРАЗД"
+  ],
+  "fallbackUsed": true,
+  "fields": {
+    "passport_number": {
+      "roiSource": "ratio",
+      "chosenPass": "A",
+      "chosenSweep": "x0_y0",
+      "bestCandidatePreview": "4026737728"
+    },
+    "dept_code": {
+      "roiSource": "anchor",
+      "chosenPass": "C",
+      "chosenSweep": "topCandidate",
+      "bestCandidatePreview": "270-219"
+    },
+    "fio": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "anchor-lines",
+      "bestCandidatePreview": "АГОРОВ РОМАНК СЕРГЕЕВИЧ"
+    },
+    "issued_by": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": "ГУ МВД РОССИИ ПО"
+    },
+    "registration": {
+      "roiSource": "ratio",
+      "chosenPass": "C",
+      "chosenSweep": "base",
+      "bestCandidatePreview": ""
+    }
+  }
+}
