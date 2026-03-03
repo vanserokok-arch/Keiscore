@@ -990,6 +990,113 @@ async function runTesseractTsvDetailed(
   }
 }
 
+function isTsvEffectivelyEmpty(tsv: string): boolean {
+  const lines = String(tsv ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length <= 1) return true;
+  const hasDataLine = lines.some((line) => !line.startsWith("level\t"));
+  if (!hasDataLine) return true;
+  return parseTsvWords(tsv).length === 0;
+}
+
+function scoreTsvByCyrillicAndKeywords(tsv: string): { score: number; cyrChars: number; keywordHits: number; wordCount: number } {
+  const words = parseTsvWords(tsv);
+  const text = words.map((word) => String(word.text ?? "")).join(" ");
+  const cyrChars = (text.match(/[А-ЯЁ]/gu) ?? []).length;
+  const keywordHits = (text.match(/(МЕСТО|ЖИТЕЛЬСТВ|ЗАРЕГ|РЕГИСТРАЦ|ЗАВЕР|КОД|ВЫДАН|ФАМИЛИЯ)/gu) ?? []).length;
+  return {
+    score: cyrChars + keywordHits * 25 + words.length * 1.2,
+    cyrChars,
+    keywordHits,
+    wordCount: words.length
+  };
+}
+
+async function runTesseractWithFallback(
+  imagePaths: string[],
+  lang: string,
+  timeoutMs: number,
+  debugDir: string
+): Promise<{
+  tsv: string;
+  stderr: string;
+  timedOut: boolean;
+  exitCode: number | null;
+  attempts: Array<Record<string, unknown>>;
+}> {
+  const uniqueImagePaths = [...new Set(imagePaths.filter((path) => String(path).trim() !== ""))];
+  const attempts: Array<{
+    imagePath: string;
+    psm: number;
+    result: Awaited<ReturnType<typeof runTesseractTsvDetailed>>;
+    empty: boolean;
+    score: number;
+    cyrChars: number;
+    keywordHits: number;
+    wordCount: number;
+  }> = [];
+  for (const imagePath of uniqueImagePaths) {
+    for (const psm of [6, 11, 4]) {
+      const result = await runTesseractTsvDetailed(
+        imagePath,
+        lang,
+        Math.min(timeoutMs, 12_000),
+        psm,
+        undefined,
+        ["--oem", "1", "--dpi", "300"]
+      );
+      const empty = isTsvEffectivelyEmpty(result.tsv);
+      const scored = scoreTsvByCyrillicAndKeywords(result.tsv);
+      attempts.push({
+        imagePath,
+        psm,
+        result,
+        empty,
+        score: empty ? -1 : scored.score,
+        cyrChars: scored.cyrChars,
+        keywordHits: scored.keywordHits,
+        wordCount: scored.wordCount
+      });
+    }
+  }
+
+  attempts.sort((left, right) => right.score - left.score);
+  const best = attempts[0];
+  const debugAttempts = attempts.map((item) => ({
+    imagePath: item.imagePath,
+    psm: item.psm,
+    empty: item.empty,
+    score: Number(item.score.toFixed(3)),
+    cyrChars: item.cyrChars,
+    keywordHits: item.keywordHits,
+    wordCount: item.wordCount,
+    timedOut: item.result.timedOut,
+    exitCode: item.result.exitCode
+  }));
+  if (debugDir !== "") {
+    await writeFile(join(debugDir, "page_for_search_ocr_attempts.json"), JSON.stringify(debugAttempts, null, 2), "utf8").catch(() => undefined);
+  }
+  const selected = best ?? {
+    imagePath: uniqueImagePaths[0] ?? "",
+    psm: 6,
+    result: { tsv: "", stderr: "", timedOut: false, exitCode: null },
+    empty: true,
+    score: -1,
+    cyrChars: 0,
+    keywordHits: 0,
+    wordCount: 0
+  };
+  return {
+    tsv: selected.result.tsv,
+    stderr: String(selected.result.stderr ?? ""),
+    timedOut: selected.result.timedOut,
+    exitCode: selected.result.exitCode,
+    attempts: debugAttempts
+  };
+}
+
 function parseTsvWords(tsv: string): TsvWord[] {
   const lines = String(tsv ?? "").split(/\r?\n/u);
   const out: TsvWord[] = [];
@@ -1781,7 +1888,7 @@ async function buildPageForSearch(
         deskewAngleDeg?: number;
       }
     | undefined
-): Promise<{ pagePath: string; metaPath: string | null }> {
+): Promise<{ pagePath: string; metaPath: string | null; variants: string[] }> {
   const baseGrayPath = join(tmpDir, "page_for_search.base_gray.png");
   const threshPath = join(tmpDir, "page_for_search.thresh.png");
   const threshInvertPath = join(tmpDir, "page_for_search.thresh_invert.png");
@@ -1795,7 +1902,7 @@ async function buildPageForSearch(
   await sharp(invert ? threshInvertPath : threshPath).png({ compressionLevel: 9 }).toFile(outPath);
 
   if (debugDir === "") {
-    return { pagePath: outPath, metaPath: null };
+    return { pagePath: outPath, metaPath: null, variants: [outPath, threshPath, threshInvertPath, baseGrayPath] };
   }
 
   await sharp(outPath).png().toFile(join(debugDir, "page_for_search.png")).catch(() => undefined);
@@ -1822,7 +1929,7 @@ async function buildPageForSearch(
     "utf8"
   ).catch(() => undefined);
 
-  return { pagePath: outPath, metaPath };
+  return { pagePath: outPath, metaPath, variants: [outPath, threshPath, threshInvertPath, baseGrayPath] };
 }
 
 function renderOverlaySvg(width: number, height: number, items: Array<{ bbox: AnchorBox; label: string; color: string }>): Buffer {
@@ -2298,18 +2405,16 @@ export class RfInternalPassportExtractor {
       }
       const pageForSearchBuilt = await buildPageForSearch(pagePath, tmp, debugDir, normalized.preprocessing);
       const pageForSearchPath = pageForSearchBuilt.pagePath;
-      const pageForSearchRuns = await Promise.all([
-        runTesseractTsvDetailed(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 6),
-        runTesseractTsvDetailed(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 11)
-      ]);
-      const pageForSearchWords = pageForSearchRuns
-        .flatMap((run) => parseTsvWords(run.tsv))
+      const pageForSearchBest = await runTesseractWithFallback(
+        pageForSearchBuilt.variants,
+        options.tesseractLang ?? "rus",
+        options.ocrTimeoutMs ?? 30_000,
+        debugDir
+      );
+      const pageForSearchWords = parseTsvWords(pageForSearchBest.tsv)
         .sort((a, b) => Number(b.confidence ?? 0) - Number(a.confidence ?? 0));
       const pageForSearchOcrEmpty = pageForSearchWords.length === 0;
-      const pageForSearchErr = pageForSearchRuns
-        .map((run, index) => `# psm=${index === 0 ? 6 : 11}\n${String(run.stderr ?? "").trim()}\n`)
-        .join("\n")
-        .trim();
+      const pageForSearchErr = String(pageForSearchBest.stderr ?? "").trim();
       if (pageForSearchOcrEmpty && debugDir !== "") {
         await writeFile(join(debugDir, "tesseract.err.txt"), `${pageForSearchErr}\n`, "utf8").catch(() => undefined);
       }
@@ -2371,12 +2476,7 @@ export class RfInternalPassportExtractor {
         pageForSearch: {
           tesseractEmpty: pageForSearchOcrEmpty,
           metaPath: pageForSearchBuilt.metaPath,
-          ocrAttempts: pageForSearchRuns.map((run, index) => ({
-            psm: index === 0 ? 6 : 11,
-            wordCount: parseTsvWords(run.tsv).length,
-            timedOut: run.timedOut,
-            exitCode: run.exitCode
-          }))
+          ocrAttempts: pageForSearchBest.attempts
         }
       };
       (normalized.preprocessing ??= {
