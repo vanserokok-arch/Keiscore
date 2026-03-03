@@ -945,8 +945,21 @@ async function runTesseractTsv(
   lang: string,
   timeoutMs: number,
   psm: number,
-  whitelist?: string
+  whitelist?: string,
+  extraArgs: string[] = []
 ): Promise<string> {
+  const detail = await runTesseractTsvDetailed(imagePath, lang, timeoutMs, psm, whitelist, extraArgs);
+  return detail.tsv;
+}
+
+async function runTesseractTsvDetailed(
+  imagePath: string,
+  lang: string,
+  timeoutMs: number,
+  psm: number,
+  whitelist?: string,
+  extraArgs: string[] = []
+): Promise<{ tsv: string; stderr: string; timedOut: boolean; exitCode: number | null }> {
   const base = imagePath.replace(/\.png$/i, "");
   const args = [
     imagePath,
@@ -956,13 +969,24 @@ async function runTesseractTsv(
     "--psm",
     String(psm),
     ...(whitelist === undefined || whitelist === "" ? [] : ["-c", `tessedit_char_whitelist=${whitelist}`]),
+    ...extraArgs,
     "tsv"
   ];
-  await execa("tesseract", args, { timeout: timeoutMs, reject: false });
+  const result = await execa("tesseract", args, { timeout: timeoutMs, reject: false });
   try {
-    return await readFile(`${base}.tsv`, "utf8");
+    return {
+      tsv: await readFile(`${base}.tsv`, "utf8"),
+      stderr: String(result.stderr ?? ""),
+      timedOut: Boolean(result.timedOut),
+      exitCode: result.exitCode ?? null
+    };
   } catch {
-    return "";
+    return {
+      tsv: "",
+      stderr: String(result.stderr ?? ""),
+      timedOut: Boolean(result.timedOut),
+      exitCode: result.exitCode ?? null
+    };
   }
 }
 
@@ -1745,18 +1769,60 @@ function findPatternCandidates(words: TsvWord[]): SearchPatternCandidate[] {
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 
-async function buildPageForSearch(pagePath: string, tmpDir: string, debugDir: string): Promise<string> {
+async function buildPageForSearch(
+  pagePath: string,
+  tmpDir: string,
+  debugDir: string,
+  preprocessing:
+    | {
+        selectedThreshold?: number;
+        usedInvert?: boolean;
+        rotationDeg?: number;
+        deskewAngleDeg?: number;
+      }
+    | undefined
+): Promise<{ pagePath: string; metaPath: string | null }> {
+  const baseGrayPath = join(tmpDir, "page_for_search.base_gray.png");
+  const threshPath = join(tmpDir, "page_for_search.thresh.png");
+  const threshInvertPath = join(tmpDir, "page_for_search.thresh_invert.png");
   const outPath = join(tmpDir, "page_for_search.png");
-  await sharp(pagePath)
-    .grayscale()
-    .normalize()
-    .sharpen(0.4, 0.8, 0.8)
-    .png({ compressionLevel: 9 })
-    .toFile(outPath);
-  if (debugDir !== "") {
-    await sharp(outPath).png().toFile(join(debugDir, "page_for_search.png")).catch(() => undefined);
+  const threshold = clampIntValue(Number(preprocessing?.selectedThreshold ?? 172), 120, 220);
+  const invert = Boolean(preprocessing?.usedInvert);
+
+  await sharp(pagePath).grayscale().blur(0.3).png({ compressionLevel: 9 }).toFile(baseGrayPath);
+  await sharp(baseGrayPath).threshold(threshold).png({ compressionLevel: 9 }).toFile(threshPath);
+  await sharp(threshPath).negate().png({ compressionLevel: 9 }).toFile(threshInvertPath);
+  await sharp(invert ? threshInvertPath : threshPath).png({ compressionLevel: 9 }).toFile(outPath);
+
+  if (debugDir === "") {
+    return { pagePath: outPath, metaPath: null };
   }
-  return outPath;
+
+  await sharp(outPath).png().toFile(join(debugDir, "page_for_search.png")).catch(() => undefined);
+  await sharp(baseGrayPath).png().toFile(join(debugDir, "base_gray.png")).catch(() => undefined);
+  await sharp(threshPath).png().toFile(join(debugDir, "thresh.png")).catch(() => undefined);
+  await sharp(threshInvertPath).png().toFile(join(debugDir, "thresh_invert.png")).catch(() => undefined);
+
+  const pageMeta = await sharp(outPath).metadata().catch(() => null);
+  const metaPath = join(debugDir, "page_for_search.meta.json");
+  await writeFile(
+    metaPath,
+    JSON.stringify(
+      {
+        width: pageMeta?.width ?? null,
+        height: pageMeta?.height ?? null,
+        threshold,
+        invert,
+        rotation: Number(preprocessing?.rotationDeg ?? 0),
+        deskew: Number(preprocessing?.deskewAngleDeg ?? 0)
+      },
+      null,
+      2
+    ),
+    "utf8"
+  ).catch(() => undefined);
+
+  return { pagePath: outPath, metaPath };
 }
 
 function renderOverlaySvg(width: number, height: number, items: Array<{ bbox: AnchorBox; label: string; color: string }>): Buffer {
@@ -2230,14 +2296,23 @@ export class RfInternalPassportExtractor {
       if (debugDir !== "") {
         await mkdir(debugDir, { recursive: true }).catch(() => undefined);
       }
-      const pageForSearchPath = await buildPageForSearch(pagePath, tmp, debugDir);
+      const pageForSearchBuilt = await buildPageForSearch(pagePath, tmp, debugDir, normalized.preprocessing);
+      const pageForSearchPath = pageForSearchBuilt.pagePath;
       const pageForSearchRuns = await Promise.all([
-        runTesseractTsv(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 6),
-        runTesseractTsv(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 11)
+        runTesseractTsvDetailed(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 6),
+        runTesseractTsvDetailed(pageForSearchPath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, 11)
       ]);
       const pageForSearchWords = pageForSearchRuns
-        .flatMap((tsv) => parseTsvWords(tsv))
+        .flatMap((run) => parseTsvWords(run.tsv))
         .sort((a, b) => Number(b.confidence ?? 0) - Number(a.confidence ?? 0));
+      const pageForSearchOcrEmpty = pageForSearchWords.length === 0;
+      const pageForSearchErr = pageForSearchRuns
+        .map((run, index) => `# psm=${index === 0 ? 6 : 11}\n${String(run.stderr ?? "").trim()}\n`)
+        .join("\n")
+        .trim();
+      if (pageForSearchOcrEmpty && debugDir !== "") {
+        await writeFile(join(debugDir, "tesseract.err.txt"), `${pageForSearchErr}\n`, "utf8").catch(() => undefined);
+      }
       const searchAnchorHits = findAnchorHits(pageForSearchWords);
       const searchPatternCandidates = findPatternCandidates(pageForSearchWords);
       await writeSearchOverlays(pageForSearchPath, width, height, debugDir, searchAnchorHits, searchPatternCandidates);
@@ -2284,6 +2359,7 @@ export class RfInternalPassportExtractor {
         anchors: Array<{ label: string; confidence: number; bbox: AnchorBox }>;
         fio: Record<string, unknown>;
         registration: Record<string, unknown>;
+        pageForSearch: Record<string, unknown>;
       } = {
         anchors: searchAnchorHits.map((item) => ({
           label: item.label,
@@ -2291,7 +2367,17 @@ export class RfInternalPassportExtractor {
           bbox: item.bbox
         })),
         fio: { strategy: "anchor_lines", status: "pending" },
-        registration: { strategy: "anchor_below_sweep", status: "pending" }
+        registration: { strategy: "anchor_below_sweep", status: "pending" },
+        pageForSearch: {
+          tesseractEmpty: pageForSearchOcrEmpty,
+          metaPath: pageForSearchBuilt.metaPath,
+          ocrAttempts: pageForSearchRuns.map((run, index) => ({
+            psm: index === 0 ? 6 : 11,
+            wordCount: parseTsvWords(run.tsv).length,
+            timedOut: run.timedOut,
+            exitCode: run.exitCode
+          }))
+        }
       };
       (normalized.preprocessing ??= {
         applied: true,
@@ -3141,6 +3227,11 @@ export class RfInternalPassportExtractor {
         if (regAnchor !== null) {
           const baseRegRoi = buildRegistrationRoiFromAnchor(regAnchor.bbox, width, height, roi.page);
           await saveAnchorRoiDebugCrop(pagePath, baseRegRoi, debugDir, "anchor_roi_registration");
+          if (debugDir !== "") {
+            const baseRegCropPath = join(tmp, "registration_roi.png");
+            await cropToFile(pagePath, baseRegRoi, baseRegCropPath);
+            await sharp(baseRegCropPath).png().toFile(join(debugDir, "registration_roi.png")).catch(() => undefined);
+          }
           const yOffsets: number[] = [];
           for (let offset = -200; offset <= 200; offset += 20) yOffsets.push(offset);
           yOffsets.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
@@ -3153,6 +3244,9 @@ export class RfInternalPassportExtractor {
             if (debugDir !== "") {
               await sharp(sweepCropPath).png().toFile(join(debugDir, `registration_sweep_${yOffset}_before.png`)).catch(() => undefined);
               await sharp(sweepPrePath).png().toFile(join(debugDir, `registration_sweep_${yOffset}_after.png`)).catch(() => undefined);
+              await sharp(sweepCropPath).png().toFile(join(debugDir, "registration_roi.png")).catch(() => undefined);
+              await sharp(sweepPrePath).png().toFile(join(debugDir, "registration_pre.png")).catch(() => undefined);
+              await sharp(sweepPrePath).sharpen(0.18).png().toFile(join(debugDir, "registration_post.png")).catch(() => undefined);
             }
             for (const psm of [6, 11]) {
               const raw = await runTesseractPlain(sweepPrePath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, psm);
