@@ -248,13 +248,21 @@ export function validateRegistration(value: string): string | null {
     .split(" ")
     .filter((part) => !isNoiseToken(part))
     .join(" ");
-  if (!REGISTRATION_REGEX.test(normalized)) {
+  if (!REGISTRATION_REGEX.test(normalized) || normalized.length < 18) {
     return null;
   }
-  if (!/\d/u.test(normalized)) {
+  const compact = normalized.replace(/\s+/gu, "");
+  const cyrCount = (compact.match(/[А-ЯЁ]/gu) ?? []).length;
+  const cyrRatio = compact.length === 0 ? 0 : cyrCount / compact.length;
+  if (cyrRatio < 0.25) {
     return null;
   }
-  if (!/(УЛ\.|Д\.|КВ\.|Г\.)/u.test(normalized)) {
+  const hasRegistrationMarker = /(ЗАРЕГ|ЖИТЕЛЬСТВ|МЕСТО)/u.test(normalized);
+  const hasStreetToken = /(УЛИЦ|УЛ\.|ПР-|\bПР\b|ПРОСП|ДОМ|\bД\.\b|\bКВ\b|\bКВ\.\b|Г\.|ЛИТЕР|ЛИТЕРА)/u.test(normalized);
+  const hasCityToken = /(ПЕТЕРБУРГ|МОСКВ|ГОРОД|Р-Н|РАЙОН)/u.test(normalized);
+  const hasNumber = /\b[0-9О]{1,4}\b/u.test(normalized);
+  const hasAddressMarker = hasStreetToken || (hasCityToken && hasNumber);
+  if (!hasRegistrationMarker || !hasAddressMarker) {
     return null;
   }
   return normalized;

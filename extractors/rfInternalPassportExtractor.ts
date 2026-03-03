@@ -1876,6 +1876,146 @@ function findPatternCandidates(words: TsvWord[]): SearchPatternCandidate[] {
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 
+function wordsInRoi(words: TsvWord[], roi: RoiRect): TsvWord[] {
+  const x2 = roi.x + roi.width;
+  const y2 = roi.y + roi.height;
+  return words.filter((word) => {
+    const x = Number(word.x0 ?? 0);
+    const y = Number(word.y0 ?? 0);
+    return x >= roi.x && x <= x2 && y >= roi.y && y <= y2;
+  });
+}
+
+function classifyRegistrationPage(
+  words: TsvWord[],
+  pageWidth: number,
+  pageHeight: number,
+  page: number
+): {
+  pageTypeDetected: "REGISTRATION" | "PASSPORT";
+  pageTypeConfidence: number;
+  registrationLikely: boolean;
+  rois: Array<Record<string, unknown>>;
+} {
+  const roiA = makeRoi(pageWidth, pageHeight, page, Math.round(pageWidth * 0.15), 0, Math.round(pageWidth * 0.5), Math.round(pageHeight * 0.25));
+  const roiB = makeRoi(pageWidth, pageHeight, page, Math.round(pageWidth * 0.55), 0, Math.round(pageWidth * 0.45), Math.round(pageHeight * 0.35));
+  const roiC = makeRoi(
+    pageWidth,
+    pageHeight,
+    page,
+    Math.round(pageWidth * 0.5),
+    Math.round(pageHeight * 0.22),
+    Math.round(pageWidth * 0.48),
+    Math.round(pageHeight * 0.46)
+  );
+  const rois: Array<{ key: string; roi: RoiRect }> = [
+    { key: "ROI_A", roi: roiA },
+    { key: "ROI_B", roi: roiB },
+    { key: "ROI_C", roi: roiC }
+  ];
+  const details = rois.map((item) => {
+    const scopedWords = wordsInRoi(words, item.roi);
+    const text = normalizeRussianText(scopedWords.map((word) => word.text).join(" "));
+    const keywordHits = (text.match(/(МЕСТО|ЖИТЕЛЬСТВ|ЗАРЕГИСТР|РЕГИСТРАЦ|ЗАВЕР)/gu) ?? []).length;
+    const cyrChars = (text.match(/[А-ЯЁ]/gu) ?? []).length;
+    const compact = text.replace(/\s+/gu, "");
+    const cyrRatio = compact.length === 0 ? 0 : cyrChars / compact.length;
+    return {
+      key: item.key,
+      roi: item.roi,
+      keywordHits,
+      cyrRatio: Number(cyrRatio.toFixed(4)),
+      textPreview: text.slice(0, 140)
+    };
+  });
+  const keywordTotal = details.reduce((sum, item) => sum + Number(item.keywordHits ?? 0), 0);
+  const cyrAvg = details.reduce((sum, item) => sum + Number(item.cyrRatio ?? 0), 0) / Math.max(1, details.length);
+  const confidence = clamp01(keywordTotal * 0.22 + cyrAvg * 0.2);
+  const registrationLikely = keywordTotal >= 2 || confidence >= 0.55;
+  return {
+    pageTypeDetected: registrationLikely ? "REGISTRATION" : "PASSPORT",
+    pageTypeConfidence: Number(confidence.toFixed(4)),
+    registrationLikely,
+    rois: details
+  };
+}
+
+function buildRegistrationFallbackRois(
+  pageWidth: number,
+  pageHeight: number,
+  page: number,
+  baseRoi: RoiRect,
+  words: TsvWord[]
+): Array<{ key: string; roi: RoiRect; reason: string }> {
+  const out: Array<{ key: string; roi: RoiRect; reason: string }> = [];
+  out.push({
+    key: "stamp_top_right",
+    roi: makeRoi(pageWidth, pageHeight, page, Math.round(pageWidth * 0.52), Math.round(pageHeight * 0.2), Math.round(pageWidth * 0.44), Math.round(pageHeight * 0.4)),
+    reason: "upper-right stamp likelihood"
+  });
+  out.push({
+    key: "stamp_top_right_wide",
+    roi: makeRoi(pageWidth, pageHeight, page, Math.round(pageWidth * 0.45), Math.round(pageHeight * 0.1), Math.round(pageWidth * 0.52), Math.round(pageHeight * 0.52)),
+    reason: "wide fallback around header and frame"
+  });
+  out.push({
+    key: "base_registration_roi",
+    roi: baseRoi,
+    reason: "ratio-based fallback roi"
+  });
+  const zaverWord = words.find((word) => normalizeRussianText(word.text).startsWith("ЗАВЕР"));
+  if (zaverWord !== undefined) {
+    const x = Number(zaverWord.x0 ?? 0);
+    const y = Number(zaverWord.y0 ?? 0);
+    out.push({
+      key: "around_zaver",
+      roi: makeRoi(pageWidth, pageHeight, page, x - 620, y - 520, Math.round(pageWidth * 0.5), Math.round(pageHeight * 0.5)),
+      reason: "around detected 'ЗАВЕР' token"
+    });
+  }
+  const uniq = new Map<string, { key: string; roi: RoiRect; reason: string }>();
+  for (const item of out) {
+    const id = `${item.roi.x}:${item.roi.y}:${item.roi.width}:${item.roi.height}`;
+    if (!uniq.has(id)) uniq.set(id, item);
+  }
+  return [...uniq.values()].slice(0, 5);
+}
+
+function evaluateRegistrationCandidate(raw: string): {
+  normalized: string;
+  pass: boolean;
+  cyrRatio: number;
+  lineCount: number;
+  keywordHits: number;
+  rejectionReason: string | null;
+} {
+  const normalized = normalizeRegistrationAnchorCandidate(raw);
+  const cyrRatio = computeRussianCharRatio(normalized);
+  const lineCountRaw = String(raw ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+  const lineCount = Math.max(lineCountRaw, normalized.split(/[,.]/u).filter((line) => line.trim().length >= 3).length);
+  const registrationMarker = /(ЗАРЕГ|ЖИТЕЛЬСТВ|МЕСТО)/u.test(normalized);
+  const hasStreetToken = /(УЛИЦ|УЛ\.|ПР-|\bПР\b|ПРОСП|ДОМ|\bД\.\b|\bКВ\b|\bКВ\.\b|Г\.|ЛИТЕР|ЛИТЕРА)/u.test(normalized);
+  const hasCityToken = /(ПЕТЕРБУРГ|МОСКВ|ГОРОД|Р-Н|РАЙОН)/u.test(normalized);
+  const hasNumber = /\b[0-9О]{1,4}\b/u.test(normalized);
+  const addressMarker = hasStreetToken || (hasCityToken && hasNumber);
+  const keywordHits = Number(registrationMarker) + Number(addressMarker);
+  const pass = registrationMarker && addressMarker && cyrRatio >= 0.2 && lineCount >= 1 && normalized.length >= 20;
+  const rejectionReason = pass
+    ? null
+    : `REGISTRATION_REJECTED:cyr_ratio=${cyrRatio.toFixed(3)};line_count=${lineCount};keyword_hits=${keywordHits}`;
+  return {
+    normalized,
+    pass,
+    cyrRatio: Number(cyrRatio.toFixed(4)),
+    lineCount,
+    keywordHits,
+    rejectionReason
+  };
+}
+
 async function buildPageForSearch(
   pagePath: string,
   tmpDir: string,
@@ -2418,6 +2558,7 @@ export class RfInternalPassportExtractor {
       if (pageForSearchOcrEmpty && debugDir !== "") {
         await writeFile(join(debugDir, "tesseract.err.txt"), `${pageForSearchErr}\n`, "utf8").catch(() => undefined);
       }
+      const pageType = classifyRegistrationPage(pageForSearchWords, width, height, pageIndex);
       const searchAnchorHits = findAnchorHits(pageForSearchWords);
       const searchPatternCandidates = findPatternCandidates(pageForSearchWords);
       await writeSearchOverlays(pageForSearchPath, width, height, debugDir, searchAnchorHits, searchPatternCandidates);
@@ -2476,6 +2617,9 @@ export class RfInternalPassportExtractor {
         pageForSearch: {
           tesseractEmpty: pageForSearchOcrEmpty,
           metaPath: pageForSearchBuilt.metaPath,
+          pageTypeDetected: pageType.pageTypeDetected,
+          pageTypeConfidence: pageType.pageTypeConfidence,
+          roiSignals: pageType.rois,
           ocrAttempts: pageForSearchBest.attempts
         }
       };
@@ -3324,6 +3468,7 @@ export class RfInternalPassportExtractor {
           searchAnchorHits.find((item) => item.label === "ЗАРЕГИСТРИРОВАН") ??
           null;
         const sweepAudit: Array<Record<string, unknown>> = [];
+        let registrationRejectReason: string | null = null;
         if (regAnchor !== null) {
           const baseRegRoi = buildRegistrationRoiFromAnchor(regAnchor.bbox, width, height, roi.page);
           await saveAnchorRoiDebugCrop(pagePath, baseRegRoi, debugDir, "anchor_roi_registration");
@@ -3348,11 +3493,13 @@ export class RfInternalPassportExtractor {
               await sharp(sweepPrePath).png().toFile(join(debugDir, "registration_pre.png")).catch(() => undefined);
               await sharp(sweepPrePath).sharpen(0.18).png().toFile(join(debugDir, "registration_post.png")).catch(() => undefined);
             }
-            for (const psm of [6, 11]) {
+            for (const psm of [6, 11, 4]) {
               const raw = await runTesseractPlain(sweepPrePath, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, psm);
-              const normalized = normalizeRegistrationAnchorCandidate(raw);
-              const validated = validateRegistrationAnchorCandidate(normalized);
+              const evaluation = evaluateRegistrationCandidate(raw);
+              const normalized = evaluation.normalized;
+              const validated = evaluation.pass ? normalized : null;
               const confidence = psm === 6 ? 0.36 : 0.32;
+              registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
               attempts.push({
                 pass_id: "C",
                 raw_text_preview: `${yOffset} ${raw}`.slice(0, 120),
@@ -3371,7 +3518,7 @@ export class RfInternalPassportExtractor {
                   normalized: validated ?? normalized,
                   confidence,
                   anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.94),
-                  markerMatch: validated !== null ? 1 : textMarkerScore(field, normalized),
+                  markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
                   validatedOverride: validated
                 })
               );
@@ -3381,7 +3528,10 @@ export class RfInternalPassportExtractor {
                 roi: sweepRoi,
                 candidatePreview: normalized.slice(0, 120),
                 validatorPassed: validated !== null,
-                rejectionReason: validated === null ? "REGISTRATION_VALIDATOR_FAILED" : null
+                rejectionReason: evaluation.rejectionReason,
+                cyr_ratio: evaluation.cyrRatio,
+                line_count: evaluation.lineCount,
+                keyword_hits: evaluation.keywordHits
               });
               if (validated !== null) {
                 break sweepLoop;
@@ -3398,11 +3548,77 @@ export class RfInternalPassportExtractor {
             },
             sweeps: sweepAudit
           };
+        } else if (pageType.registrationLikely) {
+          const candidateRois = buildRegistrationFallbackRois(width, height, roi.page, roi, pageForSearchWords);
+          const triedRois: Array<Record<string, unknown>> = [];
+          for (const [index, candidate] of candidateRois.entries()) {
+            const cropPath = join(tmp, `registration_fallback_${index}_before.png`);
+            const prePath = join(tmp, `registration_fallback_${index}_pre.png`);
+            await cropToFile(pagePath, candidate.roi, cropPath);
+            await preprocessForOcr(cropPath, prePath, "text_v2");
+            if (debugDir !== "") {
+              await sharp(cropPath).png().toFile(join(debugDir, "registration_roi.png")).catch(() => undefined);
+              await sharp(prePath).png().toFile(join(debugDir, "registration_pre.png")).catch(() => undefined);
+              await sharp(prePath).sharpen(0.18).png().toFile(join(debugDir, "registration_post.png")).catch(() => undefined);
+            }
+            for (const psm of [6, 11, 4]) {
+              const raw = await runTesseractPlain(prePath, options.tesseractLang ?? "rus", Math.min(options.ocrTimeoutMs ?? 30_000, 12_000), psm);
+              const evaluation = evaluateRegistrationCandidate(raw);
+              const normalized = evaluation.normalized;
+              const validated = evaluation.pass ? normalized : null;
+              const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
+              registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
+              attempts.push({
+                pass_id: "C",
+                raw_text_preview: `${candidate.key} ${raw}`.slice(0, 120),
+                normalized_preview: normalized.slice(0, 120),
+                source: "zonal_tsv",
+                confidence,
+                psm
+              });
+              ranked.push(
+                makeRankedCandidate({
+                  field,
+                  pass_id: "C",
+                  source: "zonal_tsv",
+                  psm,
+                  raw,
+                  normalized: validated ?? normalized,
+                  confidence,
+                  anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
+                  markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
+                  validatedOverride: validated
+                })
+              );
+              triedRois.push({
+                roiKey: candidate.key,
+                reason: candidate.reason,
+                roi: candidate.roi,
+                psm,
+                candidatePreview: normalized.slice(0, 120),
+                validatorPassed: validated !== null,
+                rejectionReason: evaluation.rejectionReason,
+                cyr_ratio: evaluation.cyrRatio,
+                line_count: evaluation.lineCount,
+                keyword_hits: evaluation.keywordHits
+              });
+            }
+          }
+          detailedAudit.registration = {
+            strategy: "classifier_fallback_sweep",
+            status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
+            reason: "REGISTRATION_PAGE_CLASSIFIED",
+            pageTypeDetected: pageType.pageTypeDetected,
+            pageTypeConfidence: pageType.pageTypeConfidence,
+            roisTried: triedRois
+          };
         } else {
           detailedAudit.registration = {
             strategy: "anchor_below_sweep",
             status: "NOT_PRESENT_IN_DOCUMENT",
             reason: "REGISTRATION_ANCHOR_NOT_FOUND",
+            pageTypeDetected: pageType.pageTypeDetected,
+            pageTypeConfidence: pageType.pageTypeConfidence,
             sweeps: []
           };
         }
@@ -3420,7 +3636,7 @@ export class RfInternalPassportExtractor {
             anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
             thresholdStrategyUsed,
             validator_passed: (best?.validated ?? null) !== null,
-            rejection_reason: (best?.validated ?? null) === null ? "FIELD_NOT_CONFIRMED" : null
+            rejection_reason: (best?.validated ?? null) === null ? (registrationRejectReason ?? "FIELD_NOT_CONFIRMED") : null
           }, rankedTop.slice(0, 3))
         );
         extractorAudit.fields[field] = {
