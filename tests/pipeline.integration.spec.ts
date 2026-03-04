@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -234,14 +234,41 @@ describe("optional real binary integration", () => {
 
   it.skipIf(!shouldRun)("extracts registration from second page of multi-page passport fixture", async () => {
     const hasPdftoppm = await commandExists("pdftoppm");
-    if (!hasPdftoppm) {
+    const hasTesseract = await commandExists("tesseract");
+    if (!hasPdftoppm || !hasTesseract) {
       return;
     }
+
     const pdfPath = join(process.cwd(), "fixtures/case3/pdf/passport_with_registration.pdf");
-    const logger = new InMemoryAuditLogger();
-    const result = await extractRfInternalPassport({ kind: "path", path: pdfPath }, { ocrVariant: "v2", logger });
-    expect(result.registration).toMatch(/УЛ\\./u);
-    const regReport = result.field_reports.find((report) => report.field === "registration");
-    expect((regReport?.roi.page ?? 0) >= 1).toBe(true);
+    const auditEvents: Array<{ message: string; data?: any }> = [];
+    const logger = { log: (event: any) => auditEvents.push(event) };
+
+    const auditDir = await mkdtemp(join(tmpdir(), "keiscore-audit-"));
+    const prevDebugDir = process.env.KEISCORE_DEBUG_ROI_DIR;
+    process.env.KEISCORE_DEBUG_ROI_DIR = auditDir;
+
+    try {
+      const result = await extractRfInternalPassport(
+        { kind: "path", path: pdfPath },
+        { ocrVariant: "v2", preferOnline: false, logger, debugUnsafeIncludeRawText: true, pdfRenderTimeoutMs: 120_000 }
+      );
+
+      expect(result.registration).not.toBeNull();
+      expect(result.registration).toMatch(/УЛ\\./u);
+      const regReport = result.field_reports.find((report) => report.field === "registration");
+      expect(regReport).toBeDefined();
+      expect((regReport?.roi.page ?? 0) >= 1).toBe(true);
+
+      const pageRangeEvent = auditEvents.find((event) => event.message === "PDF page range resolved.");
+      expect(pageRangeEvent?.data?.pageCount).toBeGreaterThanOrEqual(2);
+      expect(pageRangeEvent?.data?.resolvedRange0based?.to).toBeGreaterThanOrEqual(1);
+
+      const auditJson = JSON.parse(await readFile(join(auditDir, "audit.json"), "utf8"));
+      expect(auditJson?.registration?.multiPageSearch?.totalPages).toBeGreaterThanOrEqual(2);
+      expect(auditJson?.registration?.multiPageSearch?.selected?.includes(regReport?.roi.page ?? 1)).toBe(true);
+    } finally {
+      process.env.KEISCORE_DEBUG_ROI_DIR = prevDebugDir;
+      await rm(auditDir, { recursive: true, force: true });
+    }
   });
 });

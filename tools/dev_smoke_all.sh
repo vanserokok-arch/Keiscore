@@ -70,15 +70,7 @@ echo "Running probtest PDFs..."
 for pdf in "$PROBTEST_DIR"/*test.pdf; do
   [[ -f "$pdf" ]] || continue
   base_name="$(basename "$pdf" .pdf)"
-  pages="$(pdfinfo "$pdf" | awk '/^Pages:/ {print $2}' | tr -d '[:space:]')"
-  if [[ -z "$pages" || ! "$pages" =~ ^[0-9]+$ ]]; then
-    pages=1
-  fi
-  page=0
-  while [[ "$page" -lt "$pages" ]]; do
-    run_smoke_case "probtest_${base_name}_p${page}" "$pdf" "$page" "$page"
-    page=$((page + 1))
-  done
+  run_smoke_case "probtest_${base_name}" "$pdf" "-" "-"
 done
 
 echo
