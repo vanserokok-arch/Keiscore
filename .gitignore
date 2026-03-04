@@ -8,3 +8,8 @@ _roi_debug/
 .tmp-debug-roi/
 _tmp_*.png
 .DS_Store
+
+# debug artifacts
+_roi_debug.zip
+**/_roi_debug.zip
+/tmp/
