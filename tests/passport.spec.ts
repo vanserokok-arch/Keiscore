@@ -303,7 +303,7 @@ describe("KEIScore foundation", () => {
           passport_number: "4120 093363",
           issued_by: "ГУ МВД РОССИИ ПО Г. МОСКВЕ",
           dept_code: "770-001",
-          registration: "Г. МОСКВА УЛ. ТВЕРСКАЯ Д. 10 КВ. 5"
+          registration: "ЗАРЕГИСТРИРОВАН Г. МОСКВА УЛ. ТВЕРСКАЯ Д. 10 КВ. 5"
         }
       }),
       { preferOnline: true, logger }
@@ -343,7 +343,7 @@ describe("KEIScore foundation", () => {
           fio: "ПЕТРОВ ПЕТР ПЕТРОВИЧ",
           issued_by: "УФМС РОССИИ ПО Г. САНКТ-ПЕТЕРБУРГУ",
           dept_code: "780-002",
-          registration: "Г. САНКТ-ПЕТЕРБУРГ УЛ. САДОВАЯ Д. 1 КВ. 10"
+          registration: "ЗАРЕГИСТРИРОВАН Г. САНКТ-ПЕТЕРБУРГ УЛ. САДОВАЯ Д. 1 КВ. 10"
         }
       }),
       { preferOnline: true }
@@ -369,7 +369,7 @@ describe("KEIScore foundation", () => {
           passport_number: "4501 123456",
           issued_by: "ГУ МВД РОССИИ ПО Г. КАЗАНИ",
           dept_code: "160-004",
-          registration: "Г. КАЗАНЬ УЛ. БАУМАНА Д. 9 КВ. 7"
+          registration: "ЗАРЕГИСТРИРОВАН Г. КАЗАНЬ УЛ. БАУМАНА Д. 9 КВ. 7"
         }
       }),
       { preferOnline: true }
@@ -389,7 +389,7 @@ describe("KEIScore foundation", () => {
         quality: { blur: 0.78, contrast: 0.18, noise: 0.22 },
         anchors: { "МЕСТО ЖИТЕЛЬСТВА": { x: 330, y: 520 } },
         fields: {
-          registration: "Г. ПСКОВ УЛ. ЛЕНИНА Д. 15 КВ. 12"
+          registration: "ЗАРЕГИСТРИРОВАН Г. ПСКОВ УЛ. ЛЕНИНА Д. 15 КВ. 12"
         }
       }),
       { preferOnline: true }
@@ -431,7 +431,7 @@ describe("KEIScore foundation", () => {
           passport_number: "4120 №093363",
           issued_by: "ГУ МВД РОССИИ ПО Г. МОСКВЕ",
           dept_code: "770-001",
-          registration: "Г. МОСКВА УЛ. ТВЕРСКАЯ Д. 10 КВ. 5"
+          registration: "ЗАРЕГИСТРИРОВАН Г. МОСКВА УЛ. ТВЕРСКАЯ Д. 10 КВ. 5"
         }
       }),
       { preferOnline: true }

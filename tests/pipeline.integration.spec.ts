@@ -231,4 +231,17 @@ describe("optional real binary integration", () => {
       await rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  it.skipIf(!shouldRun)("extracts registration from second page of multi-page passport fixture", async () => {
+    const hasPdftoppm = await commandExists("pdftoppm");
+    if (!hasPdftoppm) {
+      return;
+    }
+    const pdfPath = join(process.cwd(), "fixtures/case3/pdf/passport_with_registration.pdf");
+    const logger = new InMemoryAuditLogger();
+    const result = await extractRfInternalPassport({ kind: "path", path: pdfPath }, { ocrVariant: "v2", logger });
+    expect(result.registration).toMatch(/УЛ\\./u);
+    const regReport = result.field_reports.find((report) => report.field === "registration");
+    expect((regReport?.roi.page ?? 0) >= 1).toBe(true);
+  });
 });

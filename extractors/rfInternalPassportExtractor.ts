@@ -2011,6 +2011,24 @@ function classifyRegistrationPage(
   };
 }
 
+const REGISTRATION_KEYWORDS = ["ЗАРЕГИСТРИРОВАН", "АДРЕС", "ОБЛ", "ГОР", "УЛ", "Д", "КВ"];
+
+function summarizeRegistrationSignals(words: TsvWord[]): { keywordHits: number; wordCount: number; cyrRatio: number } {
+  const text = normalizeRussianText(words.map((word) => word.text).join(" "));
+  const wordCount = text.split(/\s+/u).filter(Boolean).length;
+  const keywordHits = REGISTRATION_KEYWORDS.reduce((sum, token) => sum + (text.includes(token) ? 1 : 0), 0);
+  const cyrRatio = computeRussianCharRatio(text);
+  return { keywordHits, wordCount, cyrRatio: Number(cyrRatio.toFixed(4)) };
+}
+
+function scoreRegistrationSignals(
+  signals: { keywordHits: number; wordCount: number; cyrRatio: number },
+  registrationLikely: boolean
+): number {
+  const base = signals.keywordHits * 2 + signals.cyrRatio + signals.wordCount / 120;
+  return Number((base + (registrationLikely ? 0.35 : 0)).toFixed(4));
+}
+
 function buildRegistrationFallbackRois(
   pageWidth: number,
   pageHeight: number,
@@ -2713,6 +2731,12 @@ export class RfInternalPassportExtractor {
         rois = buildRoisFromSearchAndAnchors(rois, mergedAnchorBoxes, searchPatternCandidates, width, height);
       }
       const variant2AnchorRoiUsed = useVariant2 && Object.keys(mergedAnchorBoxes).length > 0;
+      const registrationAuditBase = {
+        anchorKeywordTried: "ЗАРЕГИСТРИРОВАН",
+        pageIndex,
+        pageCount: normalized.pages?.length ?? 1,
+        hint: "Проверьте, что в документе есть страница со штампом регистрации (обычно стр. 4–5)."
+      };
       const extractorAudit: {
         anchorsFoundCount: number;
         anchorKeys: string[];
@@ -2750,7 +2774,7 @@ export class RfInternalPassportExtractor {
           bbox: item.bbox
         })),
         fio: { strategy: "anchor_lines", status: "pending" },
-        registration: { strategy: "anchor_below_sweep", status: "pending" },
+        registration: { ...registrationAuditBase, strategy: "anchor_below_sweep", status: "pending" },
         pageForSearch: {
           tesseractEmpty: pageForSearchOcrEmpty,
           metaPath: pageForSearchBuilt.metaPath,
@@ -2829,8 +2853,314 @@ export class RfInternalPassportExtractor {
         }
       }
 
+      const runRegistrationExtraction = async (params: {
+        pagePath: string;
+        width: number;
+        height: number;
+        rois: Record<PassportField, RoiRect>;
+        anchorKeys: Set<string>;
+        pageType: ReturnType<typeof classifyRegistrationPage>;
+        pageForSearchWords: TsvWord[];
+        searchAnchorHits: ReturnType<typeof findAnchorHits>;
+        useVariant2: boolean;
+        thresholdStrategyUsed: string;
+        tmpDir: string;
+        debugDir: string;
+        fallbackUsed: boolean;
+        variant2AnchorRoiUsed: boolean;
+        registrationAuditBase: Record<string, unknown>;
+        options: ReturnType<typeof normalizeOptions>;
+      }): Promise<{
+        fieldReport: FieldReport;
+        detailedAuditRegistration: Record<string, unknown>;
+        extractorField: { roiSource: "anchor" | "ratio"; chosenPass: string; chosenSweep: string; bestCandidatePreview: string };
+        bestValidated: string | null;
+      }> => {
+        const field: PassportField = "registration";
+        const roi = params.rois[field];
+        const attempts: NonNullable<FieldReport["attempts"]> = [];
+        const ranked: RankedCandidate[] = [];
+        const anchorAlignmentScore = anchorScoreForField(field, params.anchorKeys);
+        const regAnchor =
+          params.searchAnchorHits.find((item) => item.label === "МЕСТО ЖИТЕЛЬСТВА") ??
+          params.searchAnchorHits.find((item) => item.label === "ЗАРЕГИСТРИРОВАН") ??
+          null;
+        const sweepAudit: Array<Record<string, unknown>> = [];
+        let registrationRejectReason: string | null = null;
+        const psms = [4, 6, 11];
+        let detailedAuditRegistration: Record<string, unknown> = { ...params.registrationAuditBase };
+        if (regAnchor !== null) {
+          const baseRegRoi = buildRegistrationRoiFromAnchor(regAnchor.bbox, params.width, params.height, roi.page);
+          await saveAnchorRoiDebugCrop(params.pagePath, baseRegRoi, params.debugDir, "anchor_roi_registration");
+          if (params.debugDir !== "") {
+            const baseRegCropPath = join(params.tmpDir, "registration_roi.png");
+            await cropToFile(params.pagePath, baseRegRoi, baseRegCropPath);
+            await sharp(baseRegCropPath).png().toFile(join(params.debugDir, "registration_roi.png")).catch(() => undefined);
+          }
+          const yOffsets: number[] = [];
+          for (let offset = -200; offset <= 200; offset += 20) yOffsets.push(offset);
+          yOffsets.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
+          sweepLoop: for (const yOffset of yOffsets) {
+            const xSweeps = buildRegistrationXSweeps(
+              baseRegRoi,
+              params.width,
+              params.height,
+              await detectRegistrationContentRightEdge(params.pagePath, baseRegRoi)
+            );
+            const baseSweep = xSweeps[0];
+            if (!baseSweep) continue;
+            const sweepRoi = shiftRoiVertical(baseSweep.roi, yOffset, params.height);
+            const sweepCropPath = join(params.tmpDir, `registration_sweep_${yOffset}_before.png`);
+            const sweepPrePath = join(params.tmpDir, `registration_sweep_${yOffset}_after.png`);
+            await cropToFile(params.pagePath, sweepRoi, sweepCropPath);
+            await preprocessForOcr(sweepCropPath, sweepPrePath, "text_v2");
+            if (params.debugDir !== "") {
+              await sharp(sweepCropPath).png().toFile(join(params.debugDir, `registration_sweep_${yOffset}_before.png`)).catch(() => undefined);
+              await sharp(sweepPrePath).png().toFile(join(params.debugDir, `registration_sweep_${yOffset}_after.png`)).catch(() => undefined);
+              await sharp(sweepCropPath).png().toFile(join(params.debugDir, "registration_roi.png")).catch(() => undefined);
+              await sharp(sweepPrePath).png().toFile(join(params.debugDir, "registration_pre.png")).catch(() => undefined);
+              await sharp(sweepPrePath).sharpen(0.18).png().toFile(join(params.debugDir, "registration_post.png")).catch(() => undefined);
+            }
+            const sweepCandidates: Array<{
+              sweep: string;
+              psm: number;
+              raw: string;
+              evaluation: ReturnType<typeof evaluateRegistrationCandidate>;
+              candidatePreview: string;
+              validated: string | null;
+              confidence: number;
+              roi: RoiRect;
+            }> = [];
+            for (const sweep of xSweeps) {
+              const xSweepRoi = shiftRoiVertical(sweep.roi, yOffset, params.height);
+              const xSweepCrop = join(params.tmpDir, `registration_sweep_${yOffset}_${sweep.sweep}_before.png`);
+              const xSweepPre = join(params.tmpDir, `registration_sweep_${yOffset}_${sweep.sweep}_after.png`);
+              await cropToFile(params.pagePath, xSweepRoi, xSweepCrop);
+              await preprocessForOcr(xSweepCrop, xSweepPre, "text_v2");
+              for (const psm of psms) {
+                const raw = await runTesseractPlain(
+                  xSweepPre,
+                  params.options.tesseractLang ?? "rus",
+                  params.options.ocrTimeoutMs ?? 30_000,
+                  psm
+                );
+                const registrationBlockText = cutToRegistrationBlock(raw);
+                const evaluation = evaluateRegistrationCandidate(registrationBlockText);
+                const normalized = evaluation.normalized;
+                const candidatePreview = normalizeNumericArtifacts(normalized);
+                const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
+                const validated = validatorResult !== null ? candidatePreview : null;
+                const confidence = psm === 6 ? 0.36 : 0.32;
+                sweepCandidates.push({
+                  sweep: sweep.sweep,
+                  psm,
+                  raw: registrationBlockText,
+                  evaluation,
+                  candidatePreview,
+                  validated,
+                  confidence,
+                  roi: xSweepRoi
+                });
+              }
+            }
+            const bestSweepCandidate = sweepCandidates.sort((a, b) => {
+              return (
+                b.evaluation.keywordHits - a.evaluation.keywordHits ||
+                b.evaluation.cyrRatio - a.evaluation.cyrRatio ||
+                (b.evaluation.wordCount - b.evaluation.noiseScore) - (a.evaluation.wordCount - a.evaluation.noiseScore)
+              );
+            })[0];
+            if (bestSweepCandidate !== undefined) {
+              registrationRejectReason = bestSweepCandidate.evaluation.rejectionReason ?? registrationRejectReason;
+              attempts.push({
+                pass_id: "C",
+                raw_text_preview: `${yOffset} ${bestSweepCandidate.raw}`.slice(0, 120),
+                normalized_preview: bestSweepCandidate.candidatePreview.slice(0, 120),
+                source: "zonal_tsv",
+                confidence: bestSweepCandidate.confidence,
+                psm: bestSweepCandidate.psm
+              });
+              ranked.push(
+                makeRankedCandidate({
+                  field,
+                  pass_id: "C",
+                  source: "zonal_tsv",
+                  psm: bestSweepCandidate.psm,
+                  raw: bestSweepCandidate.raw,
+                  normalized: bestSweepCandidate.validated ?? bestSweepCandidate.candidatePreview,
+                  confidence: bestSweepCandidate.confidence,
+                  anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.94),
+                  markerMatch:
+                    bestSweepCandidate.validated !== null
+                      ? 1
+                      : Math.min(1, bestSweepCandidate.evaluation.keywordHits / 2),
+                  validatedOverride: bestSweepCandidate.validated
+                })
+              );
+              sweepAudit.push({
+                yOffset,
+                sweep: bestSweepCandidate.sweep,
+                psm: bestSweepCandidate.psm,
+                roi: bestSweepCandidate.roi,
+                candidatePreview: bestSweepCandidate.candidatePreview.slice(0, 120),
+                validatorPassed: bestSweepCandidate.validated !== null,
+                rejectionReason: bestSweepCandidate.evaluation.rejectionReason,
+                cyr_ratio: bestSweepCandidate.evaluation.cyrRatio,
+                line_count: bestSweepCandidate.evaluation.lineCount,
+                word_count: bestSweepCandidate.evaluation.wordCount,
+                keyword_hits: bestSweepCandidate.evaluation.keywordHits
+              });
+              if (bestSweepCandidate.validated !== null) {
+                break sweepLoop;
+              }
+            }
+          }
+          detailedAuditRegistration = {
+            ...params.registrationAuditBase,
+            strategy: "anchor_below_sweep",
+            status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
+            anchor: {
+              label: regAnchor.label,
+              bbox: regAnchor.bbox,
+              confidence: Number(regAnchor.confidence.toFixed(4))
+            },
+            sweeps: sweepAudit
+          };
+        } else if (params.pageType.registrationLikely) {
+          const candidateRois = buildRegistrationFallbackRois(
+            params.width,
+            params.height,
+            roi.page,
+            roi,
+            params.pageForSearchWords
+          );
+          const recommendedRight = await detectRegistrationContentRightEdge(params.pagePath, roi);
+          const triedRois: Array<Record<string, unknown>> = [];
+          for (const [index, candidate] of candidateRois.entries()) {
+            const sweeps = buildRegistrationXSweeps(candidate.roi, params.width, params.height, recommendedRight);
+            for (const sweep of sweeps) {
+              const cropPath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_before.png`);
+              const prePath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_pre.png`);
+              await cropToFile(params.pagePath, sweep.roi, cropPath);
+              await preprocessForOcr(cropPath, prePath, "text_v2");
+              if (params.debugDir !== "") {
+                await sharp(cropPath).png().toFile(join(params.debugDir, "registration_roi.png")).catch(() => undefined);
+                await sharp(prePath).png().toFile(join(params.debugDir, "registration_pre.png")).catch(() => undefined);
+                await sharp(prePath).sharpen(0.18).png().toFile(join(params.debugDir, "registration_post.png")).catch(() => undefined);
+              }
+              for (const psm of psms) {
+                const raw = await runTesseractPlain(
+                  prePath,
+                  params.options.tesseractLang ?? "rus",
+                  Math.min(params.options.ocrTimeoutMs ?? 30_000, 12_000),
+                  psm
+                );
+                const registrationBlockText = cutToRegistrationBlock(raw);
+                const evaluation = evaluateRegistrationCandidate(registrationBlockText);
+                const normalized = evaluation.normalized;
+                const candidatePreview = normalizeNumericArtifacts(normalized);
+                const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
+                const validated = validatorResult !== null ? candidatePreview : null;
+                const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
+                registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
+                attempts.push({
+                  pass_id: "C",
+                  raw_text_preview: `${candidate.key}/${sweep.sweep} ${registrationBlockText}`.slice(0, 120),
+                  normalized_preview: candidatePreview.slice(0, 120),
+                  source: "zonal_tsv",
+                  confidence,
+                  psm
+                });
+                ranked.push(
+                  makeRankedCandidate({
+                    field,
+                    pass_id: "C",
+                    source: "zonal_tsv",
+                    psm,
+                    raw: registrationBlockText,
+                    normalized: validated ?? candidatePreview,
+                    confidence,
+                    anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
+                    markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
+                    validatedOverride: validated
+                  })
+                );
+                triedRois.push({
+                  roiKey: `${candidate.key}/${sweep.sweep}`,
+                  reason: candidate.reason,
+                  roi: sweep.roi,
+                  psm,
+                  candidatePreview: candidatePreview.slice(0, 120),
+                  validatorPassed: validated !== null,
+                  rejectionReason: evaluation.rejectionReason,
+                  cyr_ratio: evaluation.cyrRatio,
+                  line_count: evaluation.lineCount,
+                  word_count: evaluation.wordCount,
+                  keyword_hits: evaluation.keywordHits
+                });
+              }
+            }
+          }
+          detailedAuditRegistration = {
+            ...params.registrationAuditBase,
+            strategy: "classifier_fallback_sweep",
+            status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
+            reason: "REGISTRATION_PAGE_CLASSIFIED",
+            pageTypeDetected: params.pageType.pageTypeDetected,
+            pageTypeConfidence: params.pageType.pageTypeConfidence,
+            roisTried: triedRois
+          };
+        } else {
+          detailedAuditRegistration = {
+            ...params.registrationAuditBase,
+            strategy: "anchor_below_sweep",
+            status: "NOT_PRESENT_IN_DOCUMENT",
+            reason: "REGISTRATION_ANCHOR_NOT_FOUND",
+            reasonHuman: "На этой странице нет штампа регистрации: ключевое слово \"ЗАРЕГИСТРИРОВАН\" не найдено.",
+            pageTypeDetected: params.pageType.pageTypeDetected,
+            pageTypeConfidence: params.pageType.pageTypeConfidence,
+            sweeps: []
+          };
+        }
+        const rankedTop = params.useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
+        const best = rankedTop[0];
+        const fieldReport = bestCandidateReport(
+          field,
+          roi,
+          attempts,
+          {
+            preview: best?.normalized_preview ?? "",
+            normalized: best?.validated ?? "",
+            confidence: best?.confidence ?? 0,
+            source: (best?.source ?? "roi") as BestCandidateSource,
+            pass_id: best?.pass_id ?? "C",
+            selectedPass: best?.pass_id ?? "C",
+            rankingScore: best?.rankingScore ?? 0,
+            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
+            thresholdStrategyUsed: params.thresholdStrategyUsed,
+            validator_passed: (best?.validated ?? null) !== null,
+            rejection_reason: (best?.validated ?? null) === null ? (registrationRejectReason ?? "FIELD_NOT_CONFIRMED") : null
+          },
+          rankedTop.slice(0, 3)
+        );
+        const extractorField = {
+          roiSource: (params.variant2AnchorRoiUsed || !params.fallbackUsed ? "anchor" : "ratio") as "anchor" | "ratio",
+          chosenPass: best?.pass_id ?? "C",
+          chosenSweep: "base",
+          bestCandidatePreview: best?.normalized_preview ?? ""
+        };
+        return {
+          fieldReport,
+          detailedAuditRegistration,
+          extractorField,
+          bestValidated: best?.validated ?? null
+        };
+      };
+
       const fieldReports: FieldReport[] = [];
       const fieldDebug: Record<string, any> = {};
+      let registrationBestValidated: string | null = null;
+      let registrationFieldReportIndex = -1;
 
       // passport_number
       {
@@ -3594,250 +3924,153 @@ export class RfInternalPassportExtractor {
       }
 
       // registration
-      {
-        const field: PassportField = "registration";
-        const roi = rois[field];
-        const attempts: NonNullable<FieldReport["attempts"]> = [];
-        const ranked: RankedCandidate[] = [];
-        const anchorAlignmentScore = anchorScoreForField(field, anchorKeys);
-        const regAnchor =
-          searchAnchorHits.find((item) => item.label === "МЕСТО ЖИТЕЛЬСТВА") ??
-          searchAnchorHits.find((item) => item.label === "ЗАРЕГИСТРИРОВАН") ??
-          null;
-        const sweepAudit: Array<Record<string, unknown>> = [];
-        let registrationRejectReason: string | null = null;
-        const psms = [4, 6, 11];
-        if (regAnchor !== null) {
-          const baseRegRoi = buildRegistrationRoiFromAnchor(regAnchor.bbox, width, height, roi.page);
-          await saveAnchorRoiDebugCrop(pagePath, baseRegRoi, debugDir, "anchor_roi_registration");
-          if (debugDir !== "") {
-            const baseRegCropPath = join(tmp, "registration_roi.png");
-            await cropToFile(pagePath, baseRegRoi, baseRegCropPath);
-            await sharp(baseRegCropPath).png().toFile(join(debugDir, "registration_roi.png")).catch(() => undefined);
-          }
-          const yOffsets: number[] = [];
-          for (let offset = -200; offset <= 200; offset += 20) yOffsets.push(offset);
-          yOffsets.sort((a, b) => Math.abs(a) - Math.abs(b) || a - b);
-          sweepLoop: for (const yOffset of yOffsets) {
-            const xSweeps = buildRegistrationXSweeps(baseRegRoi, width, height, await detectRegistrationContentRightEdge(pagePath, baseRegRoi));
-            const baseSweep = xSweeps[0];
-            if (!baseSweep) continue;
-            const sweepRoi = shiftRoiVertical(baseSweep.roi, yOffset, height);
-            const sweepCropPath = join(tmp, `registration_sweep_${yOffset}_before.png`);
-            const sweepPrePath = join(tmp, `registration_sweep_${yOffset}_after.png`);
-            await cropToFile(pagePath, sweepRoi, sweepCropPath);
-            await preprocessForOcr(sweepCropPath, sweepPrePath, "text_v2");
-            if (debugDir !== "") {
-              await sharp(sweepCropPath).png().toFile(join(debugDir, `registration_sweep_${yOffset}_before.png`)).catch(() => undefined);
-              await sharp(sweepPrePath).png().toFile(join(debugDir, `registration_sweep_${yOffset}_after.png`)).catch(() => undefined);
-              await sharp(sweepCropPath).png().toFile(join(debugDir, "registration_roi.png")).catch(() => undefined);
-              await sharp(sweepPrePath).png().toFile(join(debugDir, "registration_pre.png")).catch(() => undefined);
-              await sharp(sweepPrePath).sharpen(0.18).png().toFile(join(debugDir, "registration_post.png")).catch(() => undefined);
-            }
-            const sweepCandidates: Array<{
-              sweep: string;
-              psm: number;
-              raw: string;
-              evaluation: ReturnType<typeof evaluateRegistrationCandidate>;
-              candidatePreview: string;
-              validated: string | null;
-              confidence: number;
-              roi: RoiRect;
-            }> = [];
-            for (const sweep of xSweeps) {
-              const xSweepRoi = shiftRoiVertical(sweep.roi, yOffset, height);
-              const xSweepCrop = join(tmp, `registration_sweep_${yOffset}_${sweep.sweep}_before.png`);
-              const xSweepPre = join(tmp, `registration_sweep_${yOffset}_${sweep.sweep}_after.png`);
-              await cropToFile(pagePath, xSweepRoi, xSweepCrop);
-              await preprocessForOcr(xSweepCrop, xSweepPre, "text_v2");
-              for (const psm of psms) {
-                const raw = await runTesseractPlain(xSweepPre, options.tesseractLang ?? "rus", options.ocrTimeoutMs ?? 30_000, psm);
-                const registrationBlockText = cutToRegistrationBlock(raw);
-                const evaluation = evaluateRegistrationCandidate(registrationBlockText);
-                const normalized = evaluation.normalized;
-                const candidatePreview = normalizeNumericArtifacts(normalized);
-                const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                const validated = validatorResult !== null ? candidatePreview : null;
-                const confidence = psm === 6 ? 0.36 : 0.32;
-                sweepCandidates.push({
-                  sweep: sweep.sweep,
-                  psm,
-                  raw: registrationBlockText,
-                  evaluation,
-                  candidatePreview,
-                  validated,
-                  confidence,
-                  roi: xSweepRoi
-                });
-              }
-            }
-            const bestSweepCandidate = sweepCandidates.sort((a, b) => {
-              return (
-                b.evaluation.keywordHits - a.evaluation.keywordHits ||
-                b.evaluation.cyrRatio - a.evaluation.cyrRatio ||
-                (b.evaluation.wordCount - b.evaluation.noiseScore) - (a.evaluation.wordCount - a.evaluation.noiseScore)
-              );
-            })[0];
-            if (bestSweepCandidate !== undefined) {
-              registrationRejectReason = bestSweepCandidate.evaluation.rejectionReason ?? registrationRejectReason;
-              attempts.push({
-                pass_id: "C",
-                raw_text_preview: `${yOffset} ${bestSweepCandidate.raw}`.slice(0, 120),
-                normalized_preview: bestSweepCandidate.candidatePreview.slice(0, 120),
-                source: "zonal_tsv",
-                confidence: bestSweepCandidate.confidence,
-                psm: bestSweepCandidate.psm
-              });
-              ranked.push(
-                makeRankedCandidate({
-                  field,
-                  pass_id: "C",
-                  source: "zonal_tsv",
-                  psm: bestSweepCandidate.psm,
-                  raw: bestSweepCandidate.raw,
-                  normalized: bestSweepCandidate.validated ?? bestSweepCandidate.candidatePreview,
-                  confidence: bestSweepCandidate.confidence,
-                  anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.94),
-                  markerMatch:
-                    bestSweepCandidate.validated !== null
-                      ? 1
-                      : Math.min(1, bestSweepCandidate.evaluation.keywordHits / 2),
-                  validatedOverride: bestSweepCandidate.validated
-                })
-              );
-              sweepAudit.push({
-                yOffset,
-                sweep: bestSweepCandidate.sweep,
-                psm: bestSweepCandidate.psm,
-                roi: bestSweepCandidate.roi,
-                candidatePreview: bestSweepCandidate.candidatePreview.slice(0, 120),
-                validatorPassed: bestSweepCandidate.validated !== null,
-                rejectionReason: bestSweepCandidate.evaluation.rejectionReason,
-                cyr_ratio: bestSweepCandidate.evaluation.cyrRatio,
-                line_count: bestSweepCandidate.evaluation.lineCount,
-                word_count: bestSweepCandidate.evaluation.wordCount,
-                keyword_hits: bestSweepCandidate.evaluation.keywordHits
-              });
-              if (bestSweepCandidate.validated !== null) {
-                break sweepLoop;
-              }
-            }
-          }
-          detailedAudit.registration = {
-            strategy: "anchor_below_sweep",
-            status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
-            anchor: {
-              label: regAnchor.label,
-              bbox: regAnchor.bbox,
-              confidence: Number(regAnchor.confidence.toFixed(4))
-            },
-            sweeps: sweepAudit
-          };
-        } else if (pageType.registrationLikely) {
-          const candidateRois = buildRegistrationFallbackRois(width, height, roi.page, roi, pageForSearchWords);
-          const recommendedRight = await detectRegistrationContentRightEdge(pagePath, roi);
-          const triedRois: Array<Record<string, unknown>> = [];
-          for (const [index, candidate] of candidateRois.entries()) {
-            const sweeps = buildRegistrationXSweeps(candidate.roi, width, height, recommendedRight);
-            for (const sweep of sweeps) {
-              const cropPath = join(tmp, `registration_fallback_${index}_${sweep.sweep}_before.png`);
-              const prePath = join(tmp, `registration_fallback_${index}_${sweep.sweep}_pre.png`);
-              await cropToFile(pagePath, sweep.roi, cropPath);
-              await preprocessForOcr(cropPath, prePath, "text_v2");
-              if (debugDir !== "") {
-                await sharp(cropPath).png().toFile(join(debugDir, "registration_roi.png")).catch(() => undefined);
-                await sharp(prePath).png().toFile(join(debugDir, "registration_pre.png")).catch(() => undefined);
-                await sharp(prePath).sharpen(0.18).png().toFile(join(debugDir, "registration_post.png")).catch(() => undefined);
-              }
-              for (const psm of psms) {
-                const raw = await runTesseractPlain(prePath, options.tesseractLang ?? "rus", Math.min(options.ocrTimeoutMs ?? 30_000, 12_000), psm);
-                const registrationBlockText = cutToRegistrationBlock(raw);
-                const evaluation = evaluateRegistrationCandidate(registrationBlockText);
-                const normalized = evaluation.normalized;
-                const candidatePreview = normalizeNumericArtifacts(normalized);
-                const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                const validated = validatorResult !== null ? candidatePreview : null;
-                const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
-                registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
-                attempts.push({
-                  pass_id: "C",
-                  raw_text_preview: `${candidate.key}/${sweep.sweep} ${registrationBlockText}`.slice(0, 120),
-                  normalized_preview: candidatePreview.slice(0, 120),
-                  source: "zonal_tsv",
-                  confidence,
-                  psm
-                });
-                ranked.push(
-                  makeRankedCandidate({
-                    field,
-                    pass_id: "C",
-                    source: "zonal_tsv",
-                    psm,
-                    raw: registrationBlockText,
-                    normalized: validated ?? candidatePreview,
-                    confidence,
-                    anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
-                    markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
-                    validatedOverride: validated
-                  })
-                );
-                triedRois.push({
-                  roiKey: `${candidate.key}/${sweep.sweep}`,
-                  reason: candidate.reason,
-                  roi: sweep.roi,
-                  psm,
-                  candidatePreview: candidatePreview.slice(0, 120),
-                  validatorPassed: validated !== null,
-                  rejectionReason: evaluation.rejectionReason,
-                  cyr_ratio: evaluation.cyrRatio,
-                  line_count: evaluation.lineCount,
-                  word_count: evaluation.wordCount,
-                  keyword_hits: evaluation.keywordHits
-                });
-              }
-            }
-          }
-          detailedAudit.registration = {
-            strategy: "classifier_fallback_sweep",
-            status: ranked.some((candidate) => candidate.validated !== null) ? "accepted" : "rejected",
-            reason: "REGISTRATION_PAGE_CLASSIFIED",
-            pageTypeDetected: pageType.pageTypeDetected,
-            pageTypeConfidence: pageType.pageTypeConfidence,
-            roisTried: triedRois
-          };
-        } else {
-          detailedAudit.registration = {
-            strategy: "anchor_below_sweep",
-            status: "NOT_PRESENT_IN_DOCUMENT",
-            reason: "REGISTRATION_ANCHOR_NOT_FOUND",
-            pageTypeDetected: pageType.pageTypeDetected,
-            pageTypeConfidence: pageType.pageTypeConfidence,
-            sweeps: []
-          };
+      const registrationResult = await runRegistrationExtraction({
+        pagePath,
+        width,
+        height,
+        rois,
+        anchorKeys,
+        pageType,
+        pageForSearchWords,
+        searchAnchorHits,
+        useVariant2,
+        thresholdStrategyUsed,
+        tmpDir: tmp,
+        debugDir,
+        fallbackUsed,
+        variant2AnchorRoiUsed,
+        registrationAuditBase,
+        options
+      });
+      fieldReports.push(registrationResult.fieldReport);
+      extractorAudit.fields.registration = registrationResult.extractorField;
+      detailedAudit.registration = registrationResult.detailedAuditRegistration;
+      registrationBestValidated = registrationResult.bestValidated;
+      registrationFieldReportIndex = fieldReports.length - 1;
+
+      if (registrationBestValidated === null && (normalized.pages?.length ?? 1) > 1) {
+        const registrationPageCandidates: Array<{
+          pageIndex: number;
+          pagePath: string;
+          width: number;
+          height: number;
+          words: TsvWord[];
+          pageType: ReturnType<typeof classifyRegistrationPage>;
+          searchAnchorHits: ReturnType<typeof findAnchorHits>;
+          score: number;
+          keywordHits: number;
+          wordCount: number;
+          cyrRatio: number;
+        }> = [];
+        for (const pageMeta of normalized.pages ?? []) {
+          const candidateIndex = Math.max(0, Math.floor(pageMeta.pageNumber ?? 0));
+          if (candidateIndex === pageIndex) continue;
+          const candidatePath = pageMeta.imagePath;
+          if (!candidatePath) continue;
+          const candidateWidth = pageMeta.width ?? width;
+          const candidateHeight = pageMeta.height ?? height;
+          const candidatePageForSearch = await buildPageForSearch(candidatePath, tmp, "", normalized.preprocessing);
+          const candidateBest = await runTesseractWithFallback(
+            candidatePageForSearch.variants,
+            options.tesseractLang ?? "rus",
+            Math.min(options.ocrTimeoutMs ?? 30_000, 18_000),
+            ""
+          );
+          const candidateWords = parseTsvWords(candidateBest.tsv).sort((a, b) => Number(b.confidence ?? 0) - Number(a.confidence ?? 0));
+          const candidatePageType = classifyRegistrationPage(candidateWords, candidateWidth, candidateHeight, candidateIndex);
+          const candidateSearchAnchorHits = findAnchorHits(candidateWords);
+          const signals = summarizeRegistrationSignals(candidateWords);
+          const score = scoreRegistrationSignals(signals, candidatePageType.registrationLikely);
+          registrationPageCandidates.push({
+            pageIndex: candidateIndex,
+            pagePath: candidatePath,
+            width: candidateWidth,
+            height: candidateHeight,
+            words: candidateWords,
+            pageType: candidatePageType,
+            searchAnchorHits: candidateSearchAnchorHits,
+            score,
+            keywordHits: signals.keywordHits,
+            wordCount: signals.wordCount,
+            cyrRatio: signals.cyrRatio
+          });
         }
-        const rankedTop = useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
-        const best = rankedTop[0];
-        fieldReports.push(
-          bestCandidateReport(field, roi, attempts, {
-            preview: best?.normalized_preview ?? "",
-            normalized: best?.validated ?? "",
-            confidence: best?.confidence ?? 0,
-            source: (best?.source ?? "roi") as BestCandidateSource,
-            pass_id: best?.pass_id ?? "C",
-            selectedPass: best?.pass_id ?? "C",
-            rankingScore: best?.rankingScore ?? 0,
-            anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
-            thresholdStrategyUsed,
-            validator_passed: (best?.validated ?? null) !== null,
-            rejection_reason: (best?.validated ?? null) === null ? (registrationRejectReason ?? "FIELD_NOT_CONFIRMED") : null
-          }, rankedTop.slice(0, 3))
-        );
-        extractorAudit.fields[field] = {
-          roiSource: variant2AnchorRoiUsed || !fallbackUsed ? "anchor" : "ratio",
-          chosenPass: best?.pass_id ?? "C",
-          chosenSweep: "base",
-          bestCandidatePreview: best?.normalized_preview ?? ""
+        const rankedMultiPage = registrationPageCandidates
+          .filter((item) => item.keywordHits > 0 || item.pageType.registrationLikely || item.score >= 0.6)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 2);
+        detailedAudit.registration = {
+          ...(detailedAudit.registration ?? {}),
+          multiPageSearch: {
+            totalPages: normalized.pages?.length ?? 1,
+            considered: registrationPageCandidates.map((item) => ({
+              pageIndex: item.pageIndex,
+              score: Number(item.score.toFixed(3)),
+              keywordHits: item.keywordHits,
+              wordCount: item.wordCount,
+              cyrRatio: item.cyrRatio,
+              pageTypeDetected: item.pageType.pageTypeDetected,
+              pageTypeConfidence: item.pageType.pageTypeConfidence
+            })),
+            selected: rankedMultiPage.map((item) => item.pageIndex)
+          }
         };
+        for (const candidate of rankedMultiPage) {
+          const resolved = await resolveRoisWithAnchorFirst(normalized, logger, candidate.width, candidate.height, candidate.pageIndex);
+          const mergedAnchorBoxesCandidate = mergeAnchorBoxes(resolved.anchorBoxes, candidate.searchAnchorHits);
+          let candidateRois =
+            options.ocrVariant === "v2"
+              ? buildVariant2RoisFromAnchors(resolved.rois, mergedAnchorBoxesCandidate, candidate.width, candidate.height)
+              : buildRoisFromSearchAndAnchors(resolved.rois, mergedAnchorBoxesCandidate, findPatternCandidates(candidate.words), candidate.width, candidate.height);
+          if (options.ocrVariant === "v2") {
+            candidateRois = buildRoisFromSearchAndAnchors(
+              candidateRois,
+              mergedAnchorBoxesCandidate,
+              findPatternCandidates(candidate.words),
+              candidate.width,
+              candidate.height
+            );
+          }
+          const variant2AnchorRoiUsedCandidate = options.ocrVariant === "v2" && mergedAnchorBoxesCandidate !== undefined && Object.keys(mergedAnchorBoxesCandidate).length > 0;
+          const candidateRegistrationAuditBase = {
+            ...registrationAuditBase,
+            pageIndex: candidate.pageIndex,
+            pageCount: normalized.pages?.length ?? 1
+          };
+          const candidateResult = await runRegistrationExtraction({
+            pagePath: candidate.pagePath,
+            width: candidate.width,
+            height: candidate.height,
+            rois: candidateRois,
+            anchorKeys: resolved.anchorKeys,
+            pageType: candidate.pageType,
+            pageForSearchWords: candidate.words,
+            searchAnchorHits: candidate.searchAnchorHits,
+            useVariant2,
+            thresholdStrategyUsed,
+            tmpDir: tmp,
+            debugDir,
+            fallbackUsed: resolved.fallbackUsed,
+            variant2AnchorRoiUsed: variant2AnchorRoiUsedCandidate,
+            registrationAuditBase: candidateRegistrationAuditBase,
+            options
+          });
+          detailedAudit.registration = {
+            ...candidateResult.detailedAuditRegistration,
+            multiPageSearch: (detailedAudit.registration as Record<string, unknown>)?.multiPageSearch ?? null
+          };
+          extractorAudit.fields.registration = candidateResult.extractorField;
+          if (registrationFieldReportIndex >= 0) {
+            fieldReports[registrationFieldReportIndex] = candidateResult.fieldReport;
+          } else {
+            fieldReports.push(candidateResult.fieldReport);
+            registrationFieldReportIndex = fieldReports.length - 1;
+          }
+          registrationBestValidated = candidateResult.bestValidated;
+          if (registrationBestValidated !== null) {
+            break;
+          }
+        }
       }
 
       if (debugDir) {
