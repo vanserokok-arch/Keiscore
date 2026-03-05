@@ -2119,6 +2119,118 @@ function buildRegistrationStampRois(pageWidth: number, pageHeight: number, page:
   ];
 }
 
+type RegistrationAnchor = {
+  keyword: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function detectRegistrationAnchors(ocrWords: TsvWord[]): RegistrationAnchor[] {
+  const words = Array.isArray(ocrWords) ? ocrWords : [];
+  const out: RegistrationAnchor[] = [];
+  const singleWordMatcher = /(ЗАРЕГИСТРИРОВАН|РЕГИСТРАЦИЯ|МЕСТО\s+ЖИТЕЛЬСТВА)/iu;
+
+  const toBox = (word: TsvWord): { x: number; y: number; width: number; height: number } | null => {
+    if (word.bbox !== undefined) {
+      const x1 = Number(word.bbox.x1 ?? 0);
+      const y1 = Number(word.bbox.y1 ?? 0);
+      const x2 = Number(word.bbox.x2 ?? 0);
+      const y2 = Number(word.bbox.y2 ?? 0);
+      const width = Math.max(1, Math.round(x2 - x1));
+      const height = Math.max(1, Math.round(y2 - y1));
+      return { x: Math.round(x1), y: Math.round(y1), width, height };
+    }
+    if (
+      typeof word.x0 === "number" &&
+      typeof word.y0 === "number" &&
+      typeof word.x1 === "number" &&
+      typeof word.y1 === "number"
+    ) {
+      const x = Math.round(word.x0);
+      const y = Math.round(word.y0);
+      const width = Math.max(1, Math.round(word.x1 - word.x0));
+      const height = Math.max(1, Math.round(word.y1 - word.y0));
+      return { x, y, width, height };
+    }
+    return null;
+  };
+
+  for (let idx = 0; idx < words.length; idx++) {
+    const current = words[idx];
+    const normalized = normalizeRussianText(current?.text ?? "");
+    const currentBox = current ? toBox(current) : null;
+    if (currentBox === null || normalized === "") continue;
+
+    const directMatch = normalized.match(singleWordMatcher)?.[1];
+    if (directMatch !== undefined) {
+      out.push({ keyword: normalizeRussianText(directMatch), ...currentBox });
+    }
+
+    if (normalized === "МЕСТО" && idx + 1 < words.length) {
+      const next = words[idx + 1];
+      const nextNormalized = normalizeRussianText(next?.text ?? "");
+      const nextBox = next ? toBox(next) : null;
+      if (nextBox !== null && /^ЖИТЕЛЬСТВА/u.test(nextNormalized)) {
+        const x = Math.min(currentBox.x, nextBox.x);
+        const y = Math.min(currentBox.y, nextBox.y);
+        const right = Math.max(currentBox.x + currentBox.width, nextBox.x + nextBox.width);
+        const bottom = Math.max(currentBox.y + currentBox.height, nextBox.y + nextBox.height);
+        out.push({
+          keyword: "МЕСТО ЖИТЕЛЬСТВА",
+          x,
+          y,
+          width: Math.max(1, right - x),
+          height: Math.max(1, bottom - y)
+        });
+      }
+    }
+  }
+
+  const uniq = new Map<string, RegistrationAnchor>();
+  for (const item of out) {
+    const id = `${item.keyword}:${item.x}:${item.y}:${item.width}:${item.height}`;
+    if (!uniq.has(id)) uniq.set(id, item);
+  }
+  return [...uniq.values()];
+}
+
+function buildAnchorBasedStampRois(
+  anchors: RegistrationAnchor[],
+  pageWidth: number,
+  pageHeight: number,
+  page: number
+): Array<{ key: string; roi: RoiRect; reason: string }> {
+  return anchors.map((anchor) => ({
+    key: "anchor_registration_roi",
+    roi: makeRoi(
+      pageWidth,
+      pageHeight,
+      page,
+      anchor.x - pageWidth * 0.2,
+      anchor.y - pageHeight * 0.05,
+      pageWidth * 0.7,
+      pageHeight * 0.35
+    ),
+    reason: "anchor-based registration ROI"
+  }));
+}
+
+function mergeRegistrationRois(
+  anchorBasedRois: Array<{ key: string; roi: RoiRect; reason: string }>,
+  stampColorRois: Array<{ key: string; roi: RoiRect; reason: string }>,
+  fallbackRois: Array<{ key: string; roi: RoiRect; reason: string }>
+): Array<{ key: string; roi: RoiRect; reason: string }> {
+  const merged = [...anchorBasedRois, ...stampColorRois, ...fallbackRois];
+  const uniq = new Map<string, { key: string; roi: RoiRect; reason: string }>();
+  for (const item of merged) {
+    const id = `${item.roi.x}:${item.roi.y}:${item.roi.width}:${item.roi.height}`;
+    if (!uniq.has(id)) uniq.set(id, item);
+  }
+  return [...uniq.values()];
+}
+
 async function detectStampColorRatio(pagePngPath: string, roi: RoiRect): Promise<number> {
   try {
     const { data, info } = await sharp(pagePngPath)
@@ -2985,6 +3097,9 @@ export class RfInternalPassportExtractor {
           null;
         const registrationSignals = summarizeRegistrationSignals(params.pageForSearchWords);
         const registrationLikelyBySignals = registrationSignals.keywordHits >= 1;
+        const registrationTextAnchors = detectRegistrationAnchors(params.pageForSearchWords);
+        const anchorBasedRois = buildAnchorBasedStampRois(registrationTextAnchors, params.width, params.height, roi.page);
+        const anchorKeywords = [...new Set(registrationTextAnchors.map((item) => item.keyword))];
         const sweepAudit: Array<Record<string, unknown>> = [];
         let registrationRejectReason: string | null = null;
         const psms = [4, 6, 11];
@@ -3124,17 +3239,20 @@ export class RfInternalPassportExtractor {
               bbox: regAnchor.bbox,
               confidence: Number(regAnchor.confidence.toFixed(4))
             },
+            anchorKeywords,
+            anchorRoisDetected: anchorBasedRois.length,
             sweeps: sweepAudit
           };
         } else if (params.pageType.registrationLikely || registrationLikelyBySignals) {
-          const candidateRoisUnordered = buildRegistrationFallbackRois(
+          const fallbackRois = buildRegistrationFallbackRois(
             params.width,
             params.height,
             roi.page,
             roi,
             params.pageForSearchWords
           );
-          const candidateRois = await prioritizeStampRoisByColor(params.pagePath, candidateRoisUnordered);
+          const stampColorRois = await prioritizeStampRoisByColor(params.pagePath, fallbackRois);
+          const candidateRois = mergeRegistrationRois(anchorBasedRois, stampColorRois, fallbackRois);
           const recommendedRight = await detectRegistrationContentRightEdge(params.pagePath, roi);
           const triedRois: Array<Record<string, unknown>> = [];
           for (const [index, candidate] of candidateRois.entries()) {
@@ -3262,6 +3380,8 @@ export class RfInternalPassportExtractor {
             reason: "REGISTRATION_PAGE_CLASSIFIED",
             pageTypeDetected: params.pageType.pageTypeDetected,
             pageTypeConfidence: params.pageType.pageTypeConfidence,
+            anchorKeywords,
+            anchorRoisDetected: anchorBasedRois.length,
             signals: registrationSignals,
             roisTried: triedRois
           };
@@ -3274,6 +3394,8 @@ export class RfInternalPassportExtractor {
             reasonHuman: "На этой странице нет штампа регистрации: ключевые слова \"ЗАРЕГИСТРИРОВАН\" или \"МЕСТО ЖИТЕЛЬСТВА\" не найдены.",
             pageTypeDetected: params.pageType.pageTypeDetected,
             pageTypeConfidence: params.pageType.pageTypeConfidence,
+            anchorKeywords,
+            anchorRoisDetected: anchorBasedRois.length,
             signals: registrationSignals,
             sweeps: []
           };
