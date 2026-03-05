@@ -142,37 +142,122 @@ function normalizeNumericArtifacts(text: string): string {
 }
 
 function normalizeRegistrationResult(text: string): string {
-  let cleaned = normalizeRussianText(String(text ?? ""))
-    .replace(/\s+/gu, " ")
-    .trim();
+  const anchorWord = "ЗАРЕГИСТРИРОВАН";
+  const applyTailCut = (value: string): string => {
+    const tailMarkers = [
+      "НАИМЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ",
+      "ПО ВОПРОСАМ",
+      "ОТДЕЛЕНИ",
+      "УВМ",
+      "ГУВМ",
+      "ГУ МВД",
+      "МВД",
+      "УМВД",
+      "ОТДЕЛ",
+      "РОССИИ ПО"
+    ];
+    let cutIndex = -1;
+    for (const marker of tailMarkers) {
+      const idx = value.indexOf(marker);
+      if (idx >= 0 && (cutIndex === -1 || idx < cutIndex)) {
+        cutIndex = idx;
+      }
+    }
+    return cutIndex >= 0 ? value.slice(0, cutIndex) : value;
+  };
 
-  cleaned = cleaned
-    .replace(/\bТВА\s+ЗАРЕГИСТРИРОВАН\b/gu, "ЗАРЕГИСТРИРОВАН")
-    .replace(/\b(?:ЕЕ|ЕЁ)\s*[ОO0]\s*(\d+)\b/gu, "$1")
-    .replace(/\b(?:ЕЕ|ЕЁ)\s*[ОO0]\b/gu, "")
-    .replace(/\bКБ\b/gu, "КВ")
-    .replace(/\bЗОК\b/gu, "30К");
+  let cleaned = normalizeRussianText(String(text ?? "")).replace(/\s+/gu, " ").trim();
+  cleaned = cleaned.replace(/[–—‑]/gu, "-");
+  if (cleaned === "") return "";
 
-  const tailMarker =
-    /\b(?:НАИМЕНОВАНИЕ\s+ПОДРАЗДЕЛЕНИЯ|ПО\s+ВОПРОСАМ|ПОДРАЗДЕЛЕНИЯ|ГУВМ|УВМ|УМВД|МВД)\b/u;
-  const markerIndex = cleaned.search(tailMarker);
-  if (markerIndex >= 0) {
-    cleaned = cleaned.slice(0, markerIndex);
+  // Unify anchor and cut possible leading "МЕСТО ЖИТЕЛЬСТВА ...".
+  cleaned = cleaned.replace(/ЗАРЕГИСТРИРОВАН[А-ЯЁ]*/gu, anchorWord);
+  const anchorIdx = cleaned.indexOf(anchorWord);
+  if (anchorIdx >= 0) {
+    const prefix = cleaned.slice(0, anchorIdx).trim();
+    if (/^МЕСТО\s+ЖИТЕЛЬСТВА/iu.test(prefix)) {
+      cleaned = cleaned.slice(anchorIdx);
+    }
+
+    // Fix common OCR confusions in a short window after the anchor.
+    const afterAnchor = cleaned.slice(anchorIdx + anchorWord.length);
+    const head = afterAnchor.slice(0, 24);
+    let headFixed = head;
+    headFixed = headFixed.replace(/(?<=\s)И(?=\s)/gu, "1");
+    headFixed = headFixed.replace(/\b\d[ОO0]{1,2}\d{1,2}\b/gu, (token) => token.replace(/[ОO]/gu, "0"));
+    const afterFixedRaw = headFixed + afterAnchor.slice(head.length);
+    const windowTokens = afterFixedRaw.split(/\s+/u);
+    const cleanedWindow: string[] = [];
+    let windowChars = 0;
+    for (let i = 0; i < windowTokens.length; i++) {
+      const token = windowTokens[i] ?? "";
+      const next = windowTokens[i + 1] ?? "";
+      const tokenLen = token.length + (cleanedWindow.length > 0 ? 1 : 0);
+      if (windowChars + tokenLen > 40) {
+        cleanedWindow.push(...windowTokens.slice(i));
+        break;
+      }
+      const keepAbbrev = /^(Г|Д|К|Л|П)\.?$/u.test(token);
+      const nextLooksDigit = /^\d/.test(next);
+      const oneLetterNoise = token.length === 1 && !keepAbbrev;
+      const isNoiseI = token === "И" && (nextLooksDigit || /^\d/.test(windowTokens[i + 2] ?? ""));
+      if (oneLetterNoise || isNoiseI) continue;
+      cleanedWindow.push(token);
+      windowChars += tokenLen;
+    }
+    const afterFixed = cleanedWindow.join(" ");
+    cleaned = cleaned.slice(0, anchorIdx + anchorWord.length) + " " + afterFixed;
   }
 
-  cleaned = cleaned
-    .split(" ")
-    .map((token) => {
-      if (/[0-9]/u.test(token) && /^[0-9ОO]+$/u.test(token)) {
-        return token.replace(/[ОO]/gu, "0");
-      }
-      return token;
-    })
-    .join(" ")
-    .replace(/\b[ОO]([0-9])\b/gu, "0$1")
-    .replace(/\s+/gu, " ")
-    .trim();
+  cleaned = applyTailCut(cleaned);
 
+  // Address token cleanup.
+  cleaned = cleaned
+    .replace(/(?<![А-ЯЁ0-9])КБ(?![А-ЯЁ0-9])/gu, "КВ")
+    .replace(/КВ,/gu, "КВ.")
+    .replace(/Д,/gu, "Д.")
+    .replace(/(?<![А-ЯЁ0-9])ПР-?АКТ(?![А-ЯЁ0-9])/gu, "ПР-КТ")
+    .replace(/РАЙ\s*ЙОН/gu, "РАЙОН")
+    .replace(/([.,]){2,}/gu, "$1");
+
+  cleaned = cleaned.replace(/\s*([.,])\s*/gu, "$1 ").replace(/\s+/gu, " ").trim();
+
+  // Token-level repairs after normalization.
+  const tokens = cleaned.split(" ").filter(Boolean);
+  const repaired: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    let token = tokens[i] ?? "";
+    const next = tokens[i + 1] ?? "";
+    const prev = tokens[i - 1] ?? "";
+
+    if ((/^ЗРИМОР/iu.test(token) || /^ПРИМОР/iu.test(token)) && /^(РАЙОН|Р-Н)/iu.test(next)) {
+      token = "ПРИМОРСКОМУ";
+    }
+
+    if (/^КВАРТИРА\.?$/iu.test(token) || /^КВАРТ\.?$/iu.test(token)) {
+      token = "КВ.";
+    }
+    if (/^А$/u.test(token) && /^ИРА\.?$/iu.test(next) && /^\d/.test(tokens[i + 2] ?? "")) {
+      token = "КВ.";
+      i += 1; // skip "ИРА."
+    }
+    if (/^ИРА\.?$/iu.test(token) && /^\d/.test(next)) {
+      if (/КВ\./u.test(prev)) continue; // already converted
+      token = "КВ.";
+    }
+
+    if (/^К\.?$/u.test(token)) {
+      token = /^\d/.test(next) ? "К." : "";
+    }
+    if (/^Д\.?$/u.test(token)) {
+      token = /^\d/.test(next) ? "Д." : "";
+    }
+    if (token === "") continue;
+    repaired.push(token);
+  }
+  cleaned = repaired.join(" ");
+
+  cleaned = applyTailCut(cleaned);
   return cleaned;
 }
 
@@ -756,7 +841,8 @@ export function rankCandidates(candidates: RankedCandidate[]): RankedCandidate[]
               candidate.rankingScore +
               (candidate.validatorScore ?? (candidate.validated !== null ? 1 : 0)) +
               (candidate.keywordHits ?? 0) +
-              (candidate.addressScore ?? 0)
+              Math.min(10, candidate.addressScore ?? 0) * 0.05 -
+              (/(МВД|УВМ|ОТДЕЛ|РОССИИ)/u.test(candidate.normalized_preview) ? 0.1 : 0)
           }
         : candidate
     )
@@ -788,7 +874,8 @@ function rankCandidatesVariant2(candidates: RankedCandidate[]): RankedCandidate[
               candidate.rankingScore +
               (candidate.validatorScore ?? (candidate.validated !== null ? 1 : 0)) +
               (candidate.keywordHits ?? 0) +
-              (candidate.addressScore ?? 0)
+              Math.min(10, candidate.addressScore ?? 0) * 0.05 -
+              (/(МВД|УВМ|ОТДЕЛ|РОССИИ)/u.test(candidate.normalized_preview) ? 0.1 : 0)
           }
         : candidate
     )
@@ -2324,14 +2411,25 @@ function computeRegistrationNoiseScore(normalized: string): number {
 
 function scoreRegistrationAddress(text: string): number {
   const normalized = normalizeRussianText(text);
-  let score = 0;
-  if (/\b(УЛ|УЛИЦА)\b/iu.test(normalized)) score += 1;
-  if (/\b(ПР[-\s]?КТ|ПРОСПЕКТ)\b/iu.test(normalized)) score += 1;
-  if (/\bД\s*\d+/iu.test(normalized)) score += 1;
-  if (/\bКВ\s*\d+/iu.test(normalized)) score += 1;
-  if (/\bКОРП\b/iu.test(normalized)) score += 0.5;
-  if (/\bЛИТ\b/iu.test(normalized)) score += 0.4;
-  return Number(score.toFixed(3));
+  const markers = [
+    "Г.",
+    "САНКТ-ПЕТЕРБУРГ",
+    "УЛ",
+    "ПР-КТ",
+    "Д.",
+    "Д ",
+    "КВ",
+    "КОРП",
+    "ЛИТ",
+    "Р-Н",
+    "РАЙОН",
+    "ОБЛ",
+    "ГРАД",
+    "П.",
+    "ПГТ"
+  ];
+  const hits = markers.reduce((acc, marker) => acc + (normalized.includes(marker) ? 1 : 0), 0);
+  return hits;
 }
 
 function evaluateRegistrationCandidate(raw: string): {
@@ -3236,15 +3334,17 @@ export class RfInternalPassportExtractor {
                   const evaluation = evaluateRegistrationCandidate(registrationBlockText);
                   const normalized = evaluation.normalized;
                   const candidatePreview = normalizeNumericArtifacts(normalized);
-                  const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                  const validated = validatorResult !== null ? candidatePreview : null;
+                  const normalizedCandidate = normalizeRegistrationResult(candidatePreview);
+                  const validatorResult = evaluation.pass ? validateRegistration(normalizedCandidate) : null;
+                  const validated = validatorResult !== null ? normalizedCandidate : null;
                   const confidence = psm === 6 ? 0.36 : 0.32;
+                  const addressScore = scoreRegistrationAddress(normalizedCandidate);
                   sweepCandidates.push({
                     sweep: sweep.sweep,
                     psm,
                     raw: registrationBlockText,
                     evaluation,
-                    candidatePreview,
+                    candidatePreview: normalizedCandidate,
                     validated,
                     confidence,
                     roi: xSweepRoi,
@@ -3302,7 +3402,8 @@ export class RfInternalPassportExtractor {
                 cyr_ratio: bestSweepCandidate.evaluation.cyrRatio,
                 line_count: bestSweepCandidate.evaluation.lineCount,
                 word_count: bestSweepCandidate.evaluation.wordCount,
-                keyword_hits: bestSweepCandidate.evaluation.keywordHits
+                keyword_hits: bestSweepCandidate.evaluation.keywordHits,
+                address_score: addressScore
               });
               if (bestSweepCandidate.validated !== null) {
                 break sweepLoop;
@@ -3408,15 +3509,16 @@ export class RfInternalPassportExtractor {
                     const evaluation = evaluateRegistrationCandidate(registrationBlockText);
                     const normalized = evaluation.normalized;
                     const candidatePreview = normalizeNumericArtifacts(normalized);
-                    const addressScore = scoreRegistrationAddress(candidatePreview);
-                    const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                    const validated = validatorResult !== null ? candidatePreview : null;
+                    const normalizedCandidate = normalizeRegistrationResult(candidatePreview);
+                    const addressScore = scoreRegistrationAddress(normalizedCandidate);
+                    const validatorResult = evaluation.pass ? validateRegistration(normalizedCandidate) : null;
+                    const validated = validatorResult !== null ? normalizedCandidate : null;
                     const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
                     registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
                     attempts.push({
                       pass_id: "C",
                       raw_text_preview: `${candidate.key}/${sweep.sweep}/${preprocessMode}/${input.kind} ${registrationBlockText}`.slice(0, 120),
-                      normalized_preview: candidatePreview.slice(0, 120),
+                      normalized_preview: normalizedCandidate.slice(0, 120),
                       source: "zonal_tsv",
                       confidence,
                       psm
@@ -3428,7 +3530,7 @@ export class RfInternalPassportExtractor {
                         source: "zonal_tsv",
                         psm,
                         raw: registrationBlockText,
-                        normalized: validated ?? candidatePreview,
+                        normalized: validated ?? normalizedCandidate,
                         confidence,
                         anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
                         markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
@@ -3444,13 +3546,14 @@ export class RfInternalPassportExtractor {
                       roi: sweep.roi,
                       psm,
                       preprocess: input.kind === "raw" ? "raw" : preprocessMode,
-                      candidatePreview: candidatePreview.slice(0, 120),
+                      candidatePreview: normalizedCandidate.slice(0, 120),
                       validatorPassed: validated !== null,
                       rejectionReason: evaluation.rejectionReason,
                       cyr_ratio: evaluation.cyrRatio,
                       line_count: evaluation.lineCount,
                       word_count: evaluation.wordCount,
-                      keyword_hits: evaluation.keywordHits
+                      keyword_hits: evaluation.keywordHits,
+                      address_score: addressScore
                     });
                     if (validated !== null) {
                       validatedByMode = true;
