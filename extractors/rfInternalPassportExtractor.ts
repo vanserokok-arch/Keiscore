@@ -151,6 +151,18 @@ function normalizeRegistrationResult(text: string): string {
     cleaned = text.slice(0, markerIndex);
   }
   cleaned = cleaned.replace(/\s+/gu, " ").trim();
+  if (/ЗАРЕГИСТРИРОВАН/u.test(cleaned)) {
+    const anchorMatch = cleaned.match(/ЗАРЕГИСТРИРОВАН/u);
+    const anchorPos = anchorMatch?.index ?? -1;
+    if (anchorPos >= 0) {
+      const anchorEnd = anchorPos + anchorMatch![0].length;
+      const prefix = cleaned.slice(0, anchorEnd);
+      const suffix = cleaned
+        .slice(anchorEnd)
+        .replace(/^\s*(?:ЕЕ|ЕЁ)\s*[О0O]\s*(\d?)\s*/u, (_, digit: string) => (digit ? ` ${digit} ` : " "));
+      cleaned = `${prefix}${suffix}`.replace(/\s+/gu, " ").trim();
+    }
+  }
   cleaned = cleaned
     .split(" ")
     .map((token) => {
