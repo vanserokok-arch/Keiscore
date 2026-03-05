@@ -704,6 +704,9 @@ type RankedCandidate = {
   anchorAlignmentScore: number;
   rankingScore: number;
   validated: string | null;
+  keywordHits?: number;
+  addressScore?: number;
+  validatorScore?: number;
 };
 
 function regexForField(field: PassportField): RegExp | null {
@@ -745,6 +748,18 @@ export function rankCandidates(candidates: RankedCandidate[]): RankedCandidate[]
             clamp01(candidate.russianCharRatio) * 0.1 +
             clamp01(candidate.anchorAlignmentScore) * 0.1
     }))
+    .map((candidate) =>
+      candidate.field === "registration"
+        ? {
+            ...candidate,
+            rankingScore:
+              candidate.rankingScore +
+              (candidate.validatorScore ?? (candidate.validated !== null ? 1 : 0)) +
+              (candidate.keywordHits ?? 0) +
+              (candidate.addressScore ?? 0)
+          }
+        : candidate
+    )
     .sort(
       (a, b) =>
         b.rankingScore - a.rankingScore ||
@@ -765,6 +780,18 @@ function rankCandidatesVariant2(candidates: RankedCandidate[]): RankedCandidate[
           clamp01(candidate.lengthScore) * 0.2 +
           clamp01(candidate.markerMatch ?? 0) * 0.1
     }))
+    .map((candidate) =>
+      candidate.field === "registration"
+        ? {
+            ...candidate,
+            rankingScore:
+              candidate.rankingScore +
+              (candidate.validatorScore ?? (candidate.validated !== null ? 1 : 0)) +
+              (candidate.keywordHits ?? 0) +
+              (candidate.addressScore ?? 0)
+          }
+        : candidate
+    )
     .sort(
       (a, b) =>
         b.rankingScore - a.rankingScore ||
@@ -1002,6 +1029,26 @@ async function preprocessForOcr(
     .sharpen(0.34, 0.75, 0.75)
     .png({ compressionLevel: 9 })
     .toFile(outPath);
+}
+
+async function preprocessStampRoiForOcr(inputPath: string, outputPath: string): Promise<void> {
+  await sharp(inputPath)
+    .grayscale()
+    .normalize()
+    .sharpen(0.5, 0.8, 0.8)
+    .threshold(180)
+    .png({ compressionLevel: 9 })
+    .toFile(outputPath);
+}
+
+async function preprocessStampRoiForOcr(inputPath: string, outputPath: string): Promise<void> {
+  await sharp(inputPath)
+    .grayscale()
+    .normalize()
+    .sharpen(0.5, 0.8, 0.8)
+    .threshold(180)
+    .png({ compressionLevel: 9 })
+    .toFile(outputPath);
 }
 
 async function saveRoiPassDebugArtifacts(params: {
@@ -2285,6 +2332,18 @@ function computeRegistrationNoiseScore(normalized: string): number {
   return Number(score.toFixed(3));
 }
 
+function scoreRegistrationAddress(text: string): number {
+  const normalized = normalizeRussianText(text);
+  let score = 0;
+  if (/\b(УЛ|УЛИЦА)\b/iu.test(normalized)) score += 1;
+  if (/\b(ПР[-\s]?КТ|ПРОСПЕКТ)\b/iu.test(normalized)) score += 1;
+  if (/\bД\s*\d+/iu.test(normalized)) score += 1;
+  if (/\bКВ\s*\d+/iu.test(normalized)) score += 1;
+  if (/\bКОРП\b/iu.test(normalized)) score += 0.5;
+  if (/\bЛИТ\b/iu.test(normalized)) score += 0.4;
+  return Number(score.toFixed(3));
+}
+
 function evaluateRegistrationCandidate(raw: string): {
   normalized: string;
   pass: boolean;
@@ -2811,8 +2870,12 @@ function makeRankedCandidate(params: {
   regex?: RegExp | null;
   markerMatch?: number;
   validatedOverride?: string | null;
+  keywordHits?: number;
+  addressScore?: number;
+  validatorScoreOverride?: number;
 }): RankedCandidate {
   const validated = params.validatedOverride === undefined ? validateByField(params.field, params.normalized) : params.validatedOverride;
+  const validatorScore = params.validatorScoreOverride ?? (validated !== null ? 1 : 0);
   return {
     field: params.field,
     pass_id: params.pass_id,
@@ -2834,7 +2897,10 @@ function makeRankedCandidate(params: {
     russianCharRatio: computeRussianCharRatio(params.normalized),
     anchorAlignmentScore: clamp01(params.anchorAlignmentScore),
     rankingScore: 0,
-    validated
+    validated,
+    keywordHits: params.keywordHits,
+    addressScore: params.addressScore,
+    validatorScore
   };
 }
 
@@ -3128,7 +3194,7 @@ export class RfInternalPassportExtractor {
             const sweepCropPath = join(params.tmpDir, `registration_sweep_${yOffset}_before.png`);
             const sweepPrePath = join(params.tmpDir, `registration_sweep_${yOffset}_after.png`);
             await cropToFile(params.pagePath, sweepRoi, sweepCropPath);
-            await preprocessForOcr(sweepCropPath, sweepPrePath, "text_v2");
+            await preprocessStampRoiForOcr(sweepCropPath, sweepPrePath);
             if (params.debugDir !== "") {
               await sharp(sweepCropPath).png().toFile(join(params.debugDir, `registration_sweep_${yOffset}_before.png`)).catch(() => undefined);
               await sharp(sweepPrePath).png().toFile(join(params.debugDir, `registration_sweep_${yOffset}_after.png`)).catch(() => undefined);
@@ -3151,7 +3217,7 @@ export class RfInternalPassportExtractor {
               const xSweepCrop = join(params.tmpDir, `registration_sweep_${yOffset}_${sweep.sweep}_before.png`);
               const xSweepPre = join(params.tmpDir, `registration_sweep_${yOffset}_${sweep.sweep}_after.png`);
               await cropToFile(params.pagePath, xSweepRoi, xSweepCrop);
-              await preprocessForOcr(xSweepCrop, xSweepPre, "text_v2");
+              await preprocessStampRoiForOcr(xSweepCrop, xSweepPre);
               for (const psm of psms) {
                 const raw = await runTesseractPlain(
                   xSweepPre,
@@ -3187,6 +3253,7 @@ export class RfInternalPassportExtractor {
             })[0];
             if (bestSweepCandidate !== undefined) {
               registrationRejectReason = bestSweepCandidate.evaluation.rejectionReason ?? registrationRejectReason;
+              const addressScore = scoreRegistrationAddress(bestSweepCandidate.candidatePreview);
               attempts.push({
                 pass_id: "C",
                 raw_text_preview: `${yOffset} ${bestSweepCandidate.raw}`.slice(0, 120),
@@ -3209,7 +3276,10 @@ export class RfInternalPassportExtractor {
                     bestSweepCandidate.validated !== null
                       ? 1
                       : Math.min(1, bestSweepCandidate.evaluation.keywordHits / 2),
-                  validatedOverride: bestSweepCandidate.validated
+                  validatedOverride: bestSweepCandidate.validated,
+                  keywordHits: bestSweepCandidate.evaluation.keywordHits,
+                  addressScore,
+                  validatorScoreOverride: bestSweepCandidate.validated !== null ? 1 : 0
                 })
               );
               sweepAudit.push({
@@ -3283,7 +3353,7 @@ export class RfInternalPassportExtractor {
               for (const { preprocess: preprocessMode, psm } of registrationPasses) {
                 const prePath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_${preprocessMode}.png`);
                 try {
-                  await preprocessForOcr(cropPath, prePath, preprocessMode);
+                  await preprocessStampRoiForOcr(cropPath, prePath);
                 } catch (err) {
                   triedRois.push({
                     roiKey: `${candidate.key}/${sweep.sweep}`,
@@ -3313,6 +3383,7 @@ export class RfInternalPassportExtractor {
                   const evaluation = evaluateRegistrationCandidate(registrationBlockText);
                   const normalized = evaluation.normalized;
                   const candidatePreview = normalizeNumericArtifacts(normalized);
+                  const addressScore = scoreRegistrationAddress(candidatePreview);
                   const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
                   const validated = validatorResult !== null ? candidatePreview : null;
                   const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
@@ -3336,7 +3407,10 @@ export class RfInternalPassportExtractor {
                       confidence,
                       anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
                       markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
-                      validatedOverride: validated
+                      validatedOverride: validated,
+                      keywordHits: evaluation.keywordHits,
+                      addressScore,
+                      validatorScoreOverride: validated !== null ? 1 : 0
                     })
                   );
                   triedRois.push({
