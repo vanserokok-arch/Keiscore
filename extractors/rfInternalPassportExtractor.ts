@@ -142,9 +142,14 @@ function normalizeNumericArtifacts(text: string): string {
 }
 
 function normalizeRegistrationResult(text: string): string {
-  const serviceMarker = /(НАИМЕНОВАНИЕ|ПОДРАЗДЕЛ(ЕНИЯ)?|ПО\s+ВОПРОСАМ|УВМ|УМВД|МВД|ГУВМ)/u;
+  const serviceMarker = /(ЧАИМЕНОВАНИЕ|АИМЕНОВАНИЕ|НАИМЕНОВАНИЕ|ИМЕНОВАНИЕ|ПОДРАЗДЕЛ(ЕНИЯ)?|ПО\s+ВОПРОСАМ|УВМ|УМВД|МВД|ГУВМ)/u;
+  const anchorIndex = text.search(/(ЗАРЕГИСТРИРОВАН|МЕСТО ЖИТЕЛЬСТВА)/u);
   const markerIndex = text.search(serviceMarker);
-  let cleaned = markerIndex >= 0 ? text.slice(0, markerIndex) : text;
+
+  let cleaned = text;
+  if (anchorIndex >= 0 && markerIndex > anchorIndex) {
+    cleaned = text.slice(0, markerIndex);
+  }
   cleaned = cleaned.replace(/\s+/gu, " ").trim();
   cleaned = cleaned
     .split(" ")
