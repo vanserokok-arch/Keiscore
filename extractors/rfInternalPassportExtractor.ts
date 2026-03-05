@@ -910,7 +910,11 @@ async function cropToFile(srcPath: string, roi: RoiRect, outPath: string): Promi
     .toFile(outPath);
 }
 
-async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | "digits" | "text_v2" | "digits_v2"): Promise<void> {
+async function preprocessForOcr(
+  inPath: string,
+  outPath: string,
+  mode: "text" | "digits" | "text_v2" | "digits_v2" | "text_soft"
+): Promise<void> {
   if (mode === "digits_v2") {
     const meta = await sharp(inPath).metadata();
     const targetWidth = Math.max(900, Math.round((meta.width ?? 300) * 3));
@@ -948,6 +952,15 @@ async function preprocessForOcr(inPath: string, outPath: string, mode: "text" | 
       .toFile(outPath);
     return;
   }
+  if (mode === "text_soft") {
+    await sharp(inPath)
+      .grayscale()
+      .normalize()
+      .sharpen(0.24, 0.6, 0.6)
+      .png({ compressionLevel: 9 })
+      .toFile(outPath);
+    return;
+  }
   await sharp(inPath)
     .grayscale()
     .normalize()
@@ -961,7 +974,7 @@ async function saveRoiPassDebugArtifacts(params: {
   roi: RoiRect;
   field: PassportField;
   passId: string;
-  mode: "text" | "digits" | "text_v2" | "digits_v2";
+  mode: "text" | "digits" | "text_v2" | "digits_v2" | "text_soft";
   stage: "tsv" | "plain";
   cropPath: string;
   prePath: string;
@@ -1421,7 +1434,7 @@ async function ocrTsvLinesForRoi(
   tmp: string,
   lang: string,
   timeoutMs: number,
-  mode: "text" | "digits" | "text_v2" | "digits_v2",
+  mode: "text" | "digits" | "text_v2" | "digits_v2" | "text_soft",
   psmList: number[],
   whitelist?: string,
   debugContext?: { field: PassportField; passId: string }
@@ -2011,7 +2024,7 @@ function classifyRegistrationPage(
   };
 }
 
-const REGISTRATION_KEYWORDS = ["ЗАРЕГИСТРИРОВАН", "АДРЕС", "ОБЛ", "ГОР", "УЛ", "Д", "КВ"];
+const REGISTRATION_KEYWORDS = ["ЗАРЕГИСТРИРОВАН", "МЕСТО ЖИТЕЛЬСТВА", "АДРЕС", "ОБЛ", "ГОР", "УЛ", "Д", "КВ"];
 
 function summarizeRegistrationSignals(words: TsvWord[]): { keywordHits: number; wordCount: number; cyrRatio: number } {
   const text = normalizeRussianText(words.map((word) => word.text).join(" "));
@@ -2037,6 +2050,19 @@ function buildRegistrationFallbackRois(
   words: TsvWord[]
 ): Array<{ key: string; roi: RoiRect; reason: string }> {
   const out: Array<{ key: string; roi: RoiRect; reason: string }> = [];
+  out.push({
+    key: "passport_stamp_top_right",
+    roi: makeRoi(
+      pageWidth,
+      pageHeight,
+      page,
+      Math.round(pageWidth * 0.52),
+      Math.round(pageHeight * 0.06),
+      Math.round(pageWidth * 0.45),
+      Math.round(pageHeight * 0.36)
+    ),
+    reason: "top-right color stamp block"
+  });
   out.push({
     key: "stamp_top_right",
     roi: makeRoi(pageWidth, pageHeight, page, Math.round(pageWidth * 0.52), Math.round(pageHeight * 0.2), Math.round(pageWidth * 0.44), Math.round(pageHeight * 0.4)),
@@ -2110,12 +2136,16 @@ function evaluateRegistrationCandidate(raw: string): {
     .map((line) => line.trim())
     .filter(Boolean).length;
   const lineCount = Math.max(lineCountRaw, normalized.split(/[,.]/u).filter((line) => line.trim().length >= 3).length);
-  const registrationMarker = /(ЗАРЕГ|ЖИТЕЛЬСТВ|МЕСТО)/u.test(normalized);
+  const anchorHits = ["ЗАРЕГИСТРИРОВАН", "МЕСТО ЖИТЕЛЬСТВА"].reduce(
+    (sum, anchor) => sum + (normalized.includes(anchor) ? 1 : 0),
+    0
+  );
+  const registrationMarker = anchorHits > 0;
   const hasStreetToken = /(УЛИЦ|УЛ\.|ПР-|\bПР\b|ПРОСП|ДОМ|\bД\.\b|\bКВ\b|\bКВ\.\b|Г\.|ЛИТЕР|ЛИТЕРА)/u.test(normalized);
   const hasCityToken = /(ПЕТЕРБУРГ|МОСКВ|ГОРОД|Р-Н|РАЙОН)/u.test(normalized);
   const hasNumber = /\b[0-9О]{1,4}\b/u.test(normalized);
   const addressMarker = hasStreetToken || (hasCityToken && hasNumber);
-  const keywordHits = Number(registrationMarker) + Number(addressMarker);
+  const keywordHits = anchorHits + Number(addressMarker);
   const noiseScore = computeRegistrationNoiseScore(normalized);
   const pass = registrationMarker && addressMarker && cyrRatio >= 0.2 && lineCount >= 1 && normalized.length >= 20;
   const rejectionReason = pass
@@ -2322,30 +2352,40 @@ function normalizeRegistrationAnchorCandidate(raw: string): string {
 
 function cutToRegistrationBlock(text: string): string {
   const lines = String(text ?? "").split(/\r?\n/u);
-  const strictMarker = /ЗАРЕГИСТРИРОВАН/u;
-  const fuzzyMarker = /ЗАР[А-ЯЁ\s.\-]{0,20}ВАН/u;
+  const markers: Array<{ strict: RegExp; fuzzy: RegExp; replace: string }> = [
+    { strict: /ЗАРЕГИСТРИРОВАН/u, fuzzy: /ЗАР[А-ЯЁ\s.\-]{0,20}ВАН/u, replace: "ЗАРЕГИСТРИРОВАН" },
+    { strict: /МЕСТО\s+ЖИТЕЛЬСТВА/u, fuzzy: /МЕСТО[А-ЯЁ\s.\-]{0,16}ЖИТЕЛ[А-ЯЁ]+/u, replace: "МЕСТО ЖИТЕЛЬСТВА" }
+  ];
 
-  let idx = -1;
+  let bestIdx = -1;
   let markerPos = -1;
-  for (const [lineIdx, line] of lines.entries()) {
-    const strictPos = line.search(strictMarker);
-    if (strictPos >= 0) {
-      idx = lineIdx;
-      markerPos = strictPos;
-      break;
-    }
-    const fuzzyPos = line.search(fuzzyMarker);
-    if (fuzzyPos >= 0 && idx < 0) {
-      idx = lineIdx;
-      markerPos = fuzzyPos;
-    }
-  }
-  if (idx < 0) return String(text ?? "");
+  let markerReplace = "";
 
-  const fromMarker = lines.slice(idx);
+  for (const [lineIdx, line] of lines.entries()) {
+    for (const marker of markers) {
+      const strictPos = line.search(marker.strict);
+      if (strictPos >= 0) {
+        bestIdx = lineIdx;
+        markerPos = strictPos;
+        markerReplace = marker.replace;
+        break;
+      }
+      const fuzzyPos = line.search(marker.fuzzy);
+      if (fuzzyPos >= 0 && bestIdx < 0) {
+        bestIdx = lineIdx;
+        markerPos = fuzzyPos;
+        markerReplace = marker.replace;
+      }
+    }
+    if (bestIdx >= 0) break;
+  }
+
+  if (bestIdx < 0) return String(text ?? "");
+
+  const fromMarker = lines.slice(bestIdx);
   const firstLine = String(fromMarker[0] ?? "");
   const slicedFirstLine = markerPos > 0 ? firstLine.slice(markerPos) : firstLine;
-  fromMarker[0] = slicedFirstLine.replace(/^ЗАР[А-ЯЁ\s.\-]{0,20}ВАН/u, "ЗАРЕГИСТРИРОВАН");
+  fromMarker[0] = slicedFirstLine.replace(/^ЗАР[А-ЯЁ\s.\-]{0,20}ВАН/u, markerReplace).replace(/МЕСТО[А-ЯЁ\s.\-]{0,16}ЖИТЕЛ[А-ЯЁ]+/u, markerReplace);
   return fromMarker.join(" ").replace(/\s+/gu, " ").trim();
 }
 
@@ -2732,7 +2772,7 @@ export class RfInternalPassportExtractor {
       }
       const variant2AnchorRoiUsed = useVariant2 && Object.keys(mergedAnchorBoxes).length > 0;
       const registrationAuditBase = {
-        anchorKeywordTried: "ЗАРЕГИСТРИРОВАН",
+        anchorKeywordTried: ["ЗАРЕГИСТРИРОВАН", "МЕСТО ЖИТЕЛЬСТВА"],
         pageIndex,
         pageCount: normalized.pages?.length ?? 1,
         hint: "Проверьте, что в документе есть страница со штампом регистрации (обычно стр. 4–5)."
@@ -2885,6 +2925,8 @@ export class RfInternalPassportExtractor {
           params.searchAnchorHits.find((item) => item.label === "МЕСТО ЖИТЕЛЬСТВА") ??
           params.searchAnchorHits.find((item) => item.label === "ЗАРЕГИСТРИРОВАН") ??
           null;
+        const registrationSignals = summarizeRegistrationSignals(params.pageForSearchWords);
+        const registrationLikelyBySignals = registrationSignals.keywordHits >= 1;
         const sweepAudit: Array<Record<string, unknown>> = [];
         let registrationRejectReason: string | null = null;
         const psms = [4, 6, 11];
@@ -3026,7 +3068,7 @@ export class RfInternalPassportExtractor {
             },
             sweeps: sweepAudit
           };
-        } else if (params.pageType.registrationLikely) {
+        } else if (params.pageType.registrationLikely || registrationLikelyBySignals) {
           const candidateRois = buildRegistrationFallbackRois(
             params.width,
             params.height,
@@ -3040,64 +3082,112 @@ export class RfInternalPassportExtractor {
             const sweeps = buildRegistrationXSweeps(candidate.roi, params.width, params.height, recommendedRight);
             for (const sweep of sweeps) {
               const cropPath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_before.png`);
-              const prePath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_pre.png`);
-              await cropToFile(params.pagePath, sweep.roi, cropPath);
-              await preprocessForOcr(cropPath, prePath, "text_v2");
-              if (params.debugDir !== "") {
-                await sharp(cropPath).png().toFile(join(params.debugDir, "registration_roi.png")).catch(() => undefined);
-                await sharp(prePath).png().toFile(join(params.debugDir, "registration_pre.png")).catch(() => undefined);
-                await sharp(prePath).sharpen(0.18).png().toFile(join(params.debugDir, "registration_post.png")).catch(() => undefined);
-              }
-              for (const psm of psms) {
-                const raw = await runTesseractPlain(
-                  prePath,
-                  params.options.tesseractLang ?? "rus",
-                  Math.min(params.options.ocrTimeoutMs ?? 30_000, 12_000),
-                  psm
-                );
-                const registrationBlockText = cutToRegistrationBlock(raw);
-                const evaluation = evaluateRegistrationCandidate(registrationBlockText);
-                const normalized = evaluation.normalized;
-                const candidatePreview = normalizeNumericArtifacts(normalized);
-                const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                const validated = validatorResult !== null ? candidatePreview : null;
-                const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
-                registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
-                attempts.push({
-                  pass_id: "C",
-                  raw_text_preview: `${candidate.key}/${sweep.sweep} ${registrationBlockText}`.slice(0, 120),
-                  normalized_preview: candidatePreview.slice(0, 120),
-                  source: "zonal_tsv",
-                  confidence,
-                  psm
-                });
-                ranked.push(
-                  makeRankedCandidate({
-                    field,
-                    pass_id: "C",
-                    source: "zonal_tsv",
-                    psm,
-                    raw: registrationBlockText,
-                    normalized: validated ?? candidatePreview,
-                    confidence,
-                    anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
-                    markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
-                    validatedOverride: validated
-                  })
-                );
+              try {
+                await cropToFile(params.pagePath, sweep.roi, cropPath);
+              } catch (err) {
                 triedRois.push({
                   roiKey: `${candidate.key}/${sweep.sweep}`,
                   reason: candidate.reason,
                   roi: sweep.roi,
-                  psm,
-                  candidatePreview: candidatePreview.slice(0, 120),
-                  validatorPassed: validated !== null,
-                  rejectionReason: evaluation.rejectionReason,
-                  cyr_ratio: evaluation.cyrRatio,
-                  line_count: evaluation.lineCount,
-                  word_count: evaluation.wordCount,
-                  keyword_hits: evaluation.keywordHits
+                  error: String(err)
                 });
+                registrationRejectReason = registrationRejectReason ?? "REGISTRATION_CROP_FAILED";
+                continue;
+              }
+              const preprocessModes =
+                candidate.key === "passport_stamp_top_right" ? (["text_soft", "text_v2"] as const) : (["text_v2"] as const);
+              for (const preprocessMode of preprocessModes) {
+                const prePath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_${preprocessMode}.png`);
+                try {
+                  await preprocessForOcr(cropPath, prePath, preprocessMode);
+                } catch (err) {
+                  triedRois.push({
+                    roiKey: `${candidate.key}/${sweep.sweep}`,
+                    reason: candidate.reason,
+                    roi: sweep.roi,
+                    preprocess: preprocessMode,
+                    error: String(err)
+                  });
+                  registrationRejectReason = registrationRejectReason ?? "REGISTRATION_PREPROCESS_FAILED";
+                  continue;
+                }
+                if (params.debugDir !== "") {
+                  const baseName = `registration_${candidate.key}_${sweep.sweep}_${preprocessMode}`;
+                  await sharp(cropPath).png().toFile(join(params.debugDir, `${baseName}_roi.png`)).catch(() => undefined);
+                  await sharp(prePath).png().toFile(join(params.debugDir, `${baseName}_pre.png`)).catch(() => undefined);
+                  await sharp(prePath).sharpen(0.18).png().toFile(join(params.debugDir, `${baseName}_post.png`)).catch(() => undefined);
+                }
+                let validatedByMode = false;
+                for (const psm of psms) {
+                  try {
+                    const raw = await runTesseractPlain(
+                      prePath,
+                      params.options.tesseractLang ?? "rus",
+                      Math.min(params.options.ocrTimeoutMs ?? 30_000, 12_000),
+                      psm
+                    );
+                    const registrationBlockText = cutToRegistrationBlock(raw);
+                    const evaluation = evaluateRegistrationCandidate(registrationBlockText);
+                    const normalized = evaluation.normalized;
+                    const candidatePreview = normalizeNumericArtifacts(normalized);
+                    const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
+                    const validated = validatorResult !== null ? candidatePreview : null;
+                    const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
+                    registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
+                    attempts.push({
+                      pass_id: "C",
+                      raw_text_preview: `${candidate.key}/${sweep.sweep}/${preprocessMode} ${registrationBlockText}`.slice(0, 120),
+                      normalized_preview: candidatePreview.slice(0, 120),
+                      source: "zonal_tsv",
+                      confidence,
+                      psm
+                    });
+                    ranked.push(
+                      makeRankedCandidate({
+                        field,
+                        pass_id: "C",
+                        source: "zonal_tsv",
+                        psm,
+                        raw: registrationBlockText,
+                        normalized: validated ?? candidatePreview,
+                        confidence,
+                        anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
+                        markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
+                        validatedOverride: validated
+                      })
+                    );
+                    triedRois.push({
+                      roiKey: `${candidate.key}/${sweep.sweep}`,
+                      reason: candidate.reason,
+                      roi: sweep.roi,
+                      psm,
+                      preprocess: preprocessMode,
+                      candidatePreview: candidatePreview.slice(0, 120),
+                      validatorPassed: validated !== null,
+                      rejectionReason: evaluation.rejectionReason,
+                      cyr_ratio: evaluation.cyrRatio,
+                      line_count: evaluation.lineCount,
+                      word_count: evaluation.wordCount,
+                      keyword_hits: evaluation.keywordHits
+                    });
+                    if (validated !== null) {
+                      validatedByMode = true;
+                    }
+                  } catch (err) {
+                    triedRois.push({
+                      roiKey: `${candidate.key}/${sweep.sweep}`,
+                      reason: candidate.reason,
+                      roi: sweep.roi,
+                      psm,
+                      preprocess: preprocessMode,
+                      error: String(err)
+                    });
+                    registrationRejectReason = registrationRejectReason ?? "REGISTRATION_OCR_FAILED";
+                  }
+                }
+                if (validatedByMode) {
+                  break;
+                }
               }
             }
           }
@@ -3108,6 +3198,7 @@ export class RfInternalPassportExtractor {
             reason: "REGISTRATION_PAGE_CLASSIFIED",
             pageTypeDetected: params.pageType.pageTypeDetected,
             pageTypeConfidence: params.pageType.pageTypeConfidence,
+            signals: registrationSignals,
             roisTried: triedRois
           };
         } else {
@@ -3116,9 +3207,10 @@ export class RfInternalPassportExtractor {
             strategy: "anchor_below_sweep",
             status: "NOT_PRESENT_IN_DOCUMENT",
             reason: "REGISTRATION_ANCHOR_NOT_FOUND",
-            reasonHuman: "На этой странице нет штампа регистрации: ключевое слово \"ЗАРЕГИСТРИРОВАН\" не найдено.",
+            reasonHuman: "На этой странице нет штампа регистрации: ключевые слова \"ЗАРЕГИСТРИРОВАН\" или \"МЕСТО ЖИТЕЛЬСТВА\" не найдены.",
             pageTypeDetected: params.pageType.pageTypeDetected,
             pageTypeConfidence: params.pageType.pageTypeConfidence,
+            signals: registrationSignals,
             sweeps: []
           };
         }
