@@ -141,6 +141,24 @@ function normalizeNumericArtifacts(text: string): string {
     .replace(/(?<=\d)[ОO](?=\.)/g, "0");
 }
 
+function normalizeRegistrationResult(text: string): string {
+  const serviceMarker = /(НАИМЕНОВАНИЕ|ПОДРАЗДЕЛ(ЕНИЯ)?|ПО\s+ВОПРОСАМ|УВМ|УМВД|МВД|ГУВМ)/u;
+  const markerIndex = text.search(serviceMarker);
+  let cleaned = markerIndex >= 0 ? text.slice(0, markerIndex) : text;
+  cleaned = cleaned.replace(/\s+/gu, " ").trim();
+  cleaned = cleaned
+    .split(" ")
+    .map((token) => {
+      if (/[0-9]/u.test(token) && /^[0-9ОO]+$/u.test(token)) {
+        return token.replace(/[ОO]/gu, "0");
+      }
+      return token;
+    })
+    .join(" ");
+  cleaned = cleaned.replace(/\b[ОO]([0-9])\b/gu, "0$1");
+  return cleaned;
+}
+
 type MockPassId = "A" | "B" | "C";
 
 type MockFieldAttempt = {
@@ -3216,13 +3234,15 @@ export class RfInternalPassportExtractor {
         }
         const rankedTop = params.useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
+        const cleanedPreview = best ? normalizeRegistrationResult(best.normalized_preview) : "";
+        const cleanedValidated = best?.validated ? normalizeRegistrationResult(best.validated) : null;
         const fieldReport = bestCandidateReport(
           field,
           roi,
           attempts,
           {
-            preview: best?.normalized_preview ?? "",
-            normalized: best?.validated ?? "",
+            preview: cleanedPreview || (best?.normalized_preview ?? ""),
+            normalized: cleanedValidated ?? "",
             confidence: best?.confidence ?? 0,
             source: (best?.source ?? "roi") as BestCandidateSource,
             pass_id: best?.pass_id ?? "C",
@@ -3230,8 +3250,8 @@ export class RfInternalPassportExtractor {
             rankingScore: best?.rankingScore ?? 0,
             anchorAlignmentScore: best?.anchorAlignmentScore ?? anchorAlignmentScore,
             thresholdStrategyUsed: params.thresholdStrategyUsed,
-            validator_passed: (best?.validated ?? null) !== null,
-            rejection_reason: (best?.validated ?? null) === null ? (registrationRejectReason ?? "FIELD_NOT_CONFIRMED") : null
+            validator_passed: cleanedValidated !== null,
+            rejection_reason: cleanedValidated === null ? (registrationRejectReason ?? "FIELD_NOT_CONFIRMED") : null
           },
           rankedTop.slice(0, 3)
         );
@@ -3239,13 +3259,20 @@ export class RfInternalPassportExtractor {
           roiSource: (params.variant2AnchorRoiUsed || !params.fallbackUsed ? "anchor" : "ratio") as "anchor" | "ratio",
           chosenPass: best?.pass_id ?? "C",
           chosenSweep: "base",
-          bestCandidatePreview: best?.normalized_preview ?? ""
+          bestCandidatePreview: cleanedPreview
+        };
+        detailedAuditRegistration = {
+          ...detailedAuditRegistration,
+          cleanedPreview: {
+            before: best?.normalized_preview ?? "",
+            after: cleanedPreview
+          }
         };
         return {
           fieldReport,
           detailedAuditRegistration,
           extractorField,
-          bestValidated: best?.validated ?? null
+          bestValidated: cleanedValidated ?? null
         };
       };
 
