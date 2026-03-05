@@ -3201,37 +3201,56 @@ export class RfInternalPassportExtractor {
               validated: string | null;
               confidence: number;
               roi: RoiRect;
+              preprocess?: "raw" | "preprocessed";
             }> = [];
             for (const sweep of xSweeps) {
               const xSweepRoi = shiftRoiVertical(sweep.roi, yOffset, params.height);
               const xSweepCrop = join(params.tmpDir, `registration_sweep_${yOffset}_${sweep.sweep}_before.png`);
-              const xSweepPre = join(params.tmpDir, `registration_sweep_${yOffset}_${sweep.sweep}_after.png`);
               await cropToFile(params.pagePath, xSweepRoi, xSweepCrop);
-              await preprocessStampRoiForOcr(xSweepCrop, xSweepPre);
+              const buildRegistrationOcrInputs = async (
+                roiPath: string,
+                debugDir: string,
+                baseName: string
+              ): Promise<Array<{ path: string; kind: "raw" | "preprocessed" }>> => {
+                const out: Array<{ path: string; kind: "raw" | "preprocessed" }> = [{ path: roiPath, kind: "raw" }];
+                const preDir = debugDir === "" ? params.tmpDir : debugDir;
+                const preprocessedPath = join(preDir, `${baseName}_after.png`);
+                await preprocessStampRoiForOcr(roiPath, preprocessedPath);
+                out.push({ path: preprocessedPath, kind: "preprocessed" });
+                return out;
+              };
+              const ocrInputs = await buildRegistrationOcrInputs(
+                xSweepCrop,
+                params.debugDir,
+                `registration_sweep_${yOffset}_${sweep.sweep}`
+              );
               for (const psm of psms) {
-                const raw = await runTesseractPlain(
-                  xSweepPre,
-                  params.options.tesseractLang ?? "rus",
-                  params.options.ocrTimeoutMs ?? 30_000,
-                  psm
-                );
-                const registrationBlockText = cutToRegistrationBlock(raw);
-                const evaluation = evaluateRegistrationCandidate(registrationBlockText);
-                const normalized = evaluation.normalized;
-                const candidatePreview = normalizeNumericArtifacts(normalized);
-                const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                const validated = validatorResult !== null ? candidatePreview : null;
-                const confidence = psm === 6 ? 0.36 : 0.32;
-                sweepCandidates.push({
-                  sweep: sweep.sweep,
-                  psm,
-                  raw: registrationBlockText,
-                  evaluation,
-                  candidatePreview,
-                  validated,
-                  confidence,
-                  roi: xSweepRoi
-                });
+                for (const input of ocrInputs) {
+                  const raw = await runTesseractPlain(
+                    input.path,
+                    params.options.tesseractLang ?? "rus",
+                    params.options.ocrTimeoutMs ?? 30_000,
+                    psm
+                  );
+                  const registrationBlockText = cutToRegistrationBlock(raw);
+                  const evaluation = evaluateRegistrationCandidate(registrationBlockText);
+                  const normalized = evaluation.normalized;
+                  const candidatePreview = normalizeNumericArtifacts(normalized);
+                  const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
+                  const validated = validatorResult !== null ? candidatePreview : null;
+                  const confidence = psm === 6 ? 0.36 : 0.32;
+                  sweepCandidates.push({
+                    sweep: sweep.sweep,
+                    psm,
+                    raw: registrationBlockText,
+                    evaluation,
+                    candidatePreview,
+                    validated,
+                    confidence,
+                    roi: xSweepRoi,
+                    preprocess: input.kind
+                  });
+                }
               }
             }
             const bestSweepCandidate = sweepCandidates.sort((a, b) => {
@@ -3340,10 +3359,23 @@ export class RfInternalPassportExtractor {
               const registrationPasses: Array<{ preprocess: "text_soft" | "text_v2"; psm: number }> = isStampRoi
                 ? fallbackPasses
                 : psms.map((psm) => ({ preprocess: "text_v2" as const, psm }));
+              const buildRegistrationOcrInputs = async (
+                roiPath: string,
+                debugDir: string,
+                baseName: string
+              ): Promise<Array<{ path: string; kind: "raw" | "preprocessed" }>> => {
+                const out: Array<{ path: string; kind: "raw" | "preprocessed" }> = [{ path: roiPath, kind: "raw" }];
+                const preDir = debugDir === "" ? params.tmpDir : debugDir;
+                const preprocessedPath = join(preDir, `${baseName}_pre.png`);
+                await preprocessStampRoiForOcr(roiPath, preprocessedPath);
+                out.push({ path: preprocessedPath, kind: "preprocessed" });
+                return out;
+              };
               for (const { preprocess: preprocessMode, psm } of registrationPasses) {
-                const prePath = join(params.tmpDir, `registration_fallback_${index}_${sweep.sweep}_${preprocessMode}.png`);
+                const baseName = `registration_fallback_${index}_${sweep.sweep}_${preprocessMode}`;
+                let ocrInputs: Array<{ path: string; kind: "raw" | "preprocessed" }>;
                 try {
-                  await preprocessStampRoiForOcr(cropPath, prePath);
+                  ocrInputs = await buildRegistrationOcrInputs(cropPath, params.debugDir, baseName);
                 } catch (err) {
                   triedRois.push({
                     roiKey: `${candidate.key}/${sweep.sweep}`,
@@ -3356,69 +3388,74 @@ export class RfInternalPassportExtractor {
                   continue;
                 }
                 if (params.debugDir !== "") {
-                  const baseName = `registration_${candidate.key}_${sweep.sweep}_${preprocessMode}`;
                   await sharp(cropPath).png().toFile(join(params.debugDir, `${baseName}_roi.png`)).catch(() => undefined);
-                  await sharp(prePath).png().toFile(join(params.debugDir, `${baseName}_pre.png`)).catch(() => undefined);
-                  await sharp(prePath).sharpen(0.18).png().toFile(join(params.debugDir, `${baseName}_post.png`)).catch(() => undefined);
+                  const prePathDebug = ocrInputs.find((item) => item.kind === "preprocessed")?.path;
+                  if (prePathDebug) {
+                    await sharp(prePathDebug).png().toFile(join(params.debugDir, `${baseName}_pre.png`)).catch(() => undefined);
+                    await sharp(prePathDebug).sharpen(0.18).png().toFile(join(params.debugDir, `${baseName}_post.png`)).catch(() => undefined);
+                  }
                 }
                 let validatedByMode = false;
                 try {
-                  const raw = await runTesseractPlain(
-                    prePath,
-                    params.options.tesseractLang ?? "rus",
-                    Math.min(params.options.ocrTimeoutMs ?? 30_000, 12_000),
-                    psm
-                  );
-                  const registrationBlockText = cutToRegistrationBlock(raw);
-                  const evaluation = evaluateRegistrationCandidate(registrationBlockText);
-                  const normalized = evaluation.normalized;
-                  const candidatePreview = normalizeNumericArtifacts(normalized);
-                  const addressScore = scoreRegistrationAddress(candidatePreview);
-                  const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
-                  const validated = validatorResult !== null ? candidatePreview : null;
-                  const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
-                  registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
-                  attempts.push({
-                    pass_id: "C",
-                    raw_text_preview: `${candidate.key}/${sweep.sweep}/${preprocessMode} ${registrationBlockText}`.slice(0, 120),
-                    normalized_preview: candidatePreview.slice(0, 120),
-                    source: "zonal_tsv",
-                    confidence,
-                    psm
-                  });
-                  ranked.push(
-                    makeRankedCandidate({
-                      field,
+                  for (const input of ocrInputs) {
+                    const raw = await runTesseractPlain(
+                      input.path,
+                      params.options.tesseractLang ?? "rus",
+                      Math.min(params.options.ocrTimeoutMs ?? 30_000, 12_000),
+                      psm
+                    );
+                    const registrationBlockText = cutToRegistrationBlock(raw);
+                    const evaluation = evaluateRegistrationCandidate(registrationBlockText);
+                    const normalized = evaluation.normalized;
+                    const candidatePreview = normalizeNumericArtifacts(normalized);
+                    const addressScore = scoreRegistrationAddress(candidatePreview);
+                    const validatorResult = evaluation.pass ? validateRegistration(candidatePreview) : null;
+                    const validated = validatorResult !== null ? candidatePreview : null;
+                    const confidence = psm === 6 ? 0.34 : psm === 11 ? 0.3 : 0.28;
+                    registrationRejectReason = evaluation.rejectionReason ?? registrationRejectReason;
+                    attempts.push({
                       pass_id: "C",
+                      raw_text_preview: `${candidate.key}/${sweep.sweep}/${preprocessMode}/${input.kind} ${registrationBlockText}`.slice(0, 120),
+                      normalized_preview: candidatePreview.slice(0, 120),
                       source: "zonal_tsv",
-                      psm,
-                      raw: registrationBlockText,
-                      normalized: validated ?? candidatePreview,
                       confidence,
-                      anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
-                      markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
-                      validatedOverride: validated,
-                      keywordHits: evaluation.keywordHits,
-                      addressScore,
-                      validatorScoreOverride: validated !== null ? 1 : 0
-                    })
-                  );
-                  triedRois.push({
-                    roiKey: `${candidate.key}/${sweep.sweep}`,
-                    reason: candidate.reason,
-                    roi: sweep.roi,
-                    psm,
-                    preprocess: preprocessMode,
-                    candidatePreview: candidatePreview.slice(0, 120),
-                    validatorPassed: validated !== null,
-                    rejectionReason: evaluation.rejectionReason,
-                    cyr_ratio: evaluation.cyrRatio,
-                    line_count: evaluation.lineCount,
-                    word_count: evaluation.wordCount,
-                    keyword_hits: evaluation.keywordHits
-                  });
-                  if (validated !== null) {
-                    validatedByMode = true;
+                      psm
+                    });
+                    ranked.push(
+                      makeRankedCandidate({
+                        field,
+                        pass_id: "C",
+                        source: "zonal_tsv",
+                        psm,
+                        raw: registrationBlockText,
+                        normalized: validated ?? candidatePreview,
+                        confidence,
+                        anchorAlignmentScore: Math.max(anchorAlignmentScore, 0.68),
+                        markerMatch: validated !== null ? 1 : Math.min(1, evaluation.keywordHits / 2),
+                        validatedOverride: validated,
+                        keywordHits: evaluation.keywordHits,
+                        addressScore,
+                        validatorScoreOverride: validated !== null ? 1 : 0
+                      })
+                    );
+                    triedRois.push({
+                      roiKey: `${candidate.key}/${sweep.sweep}`,
+                      reason: candidate.reason,
+                      roi: sweep.roi,
+                      psm,
+                      preprocess: input.kind === "raw" ? "raw" : preprocessMode,
+                      candidatePreview: candidatePreview.slice(0, 120),
+                      validatorPassed: validated !== null,
+                      rejectionReason: evaluation.rejectionReason,
+                      cyr_ratio: evaluation.cyrRatio,
+                      line_count: evaluation.lineCount,
+                      word_count: evaluation.wordCount,
+                      keyword_hits: evaluation.keywordHits
+                    });
+                    if (validated !== null) {
+                      validatedByMode = true;
+                      break;
+                    }
                   }
                 } catch (err) {
                   triedRois.push({
