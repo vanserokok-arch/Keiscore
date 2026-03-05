@@ -1041,16 +1041,6 @@ async function preprocessStampRoiForOcr(inputPath: string, outputPath: string): 
     .toFile(outputPath);
 }
 
-async function preprocessStampRoiForOcr(inputPath: string, outputPath: string): Promise<void> {
-  await sharp(inputPath)
-    .grayscale()
-    .normalize()
-    .sharpen(0.5, 0.8, 0.8)
-    .threshold(180)
-    .png({ compressionLevel: 9 })
-    .toFile(outputPath);
-}
-
 async function saveRoiPassDebugArtifacts(params: {
   pagePath: string;
   roi: RoiRect;
@@ -2898,8 +2888,8 @@ function makeRankedCandidate(params: {
     anchorAlignmentScore: clamp01(params.anchorAlignmentScore),
     rankingScore: 0,
     validated,
-    keywordHits: params.keywordHits,
-    addressScore: params.addressScore,
+    keywordHits: params.keywordHits ?? 0,
+    addressScore: params.addressScore ?? 0,
     validatorScore
   };
 }
