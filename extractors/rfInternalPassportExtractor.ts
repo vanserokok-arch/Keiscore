@@ -141,33 +141,74 @@ function normalizeNumericArtifacts(text: string): string {
     .replace(/(?<=\d)[ОO](?=\.)/g, "0");
 }
 
+const AUTHORITY_MARKER_REGEX =
+  /(ГУВМ|УВМ|УМВД|МВД|УНВД|НВД|РОССИИ|НАИМЕНОВАНИЕ|ПОДРАЗДЕЛ\w*|ОТДЕЛ\w*|ИВД|ГУ\.?|Г\.У|Р\s*ГУ)/iu;
+
+function registrationContainsAuthorityTail(text: string): boolean {
+  return AUTHORITY_MARKER_REGEX.test(String(text ?? ""));
+}
+
+function registrationHasAddressMarker(text: string): boolean {
+  const markers = new Set(["УЛ", "УЛ.", "ПР", "ПР-КТ", "Д", "Д.", "К", "К.", "КВ", "КВ.", "КОРП", "КОРП.", "ЛИТ", "ПЛ", "ПЕР", "Р-Н"]);
+  const tokens = String(text ?? "")
+    .split(/\s+/u)
+    .map((t) => t.replace(/[,.]/g, ""));
+  return tokens.some((token) => markers.has(token));
+}
+
 function normalizeRegistrationResult(text: string): string {
   const anchorWord = "ЗАРЕГИСТРИРОВАН";
-  const applyTailCut = (value: string): string => {
-    const tailMarkers = [
-      "НАИМЕНОВАНИЕ ПОДРАЗДЕЛЕНИЯ",
-      "ПО ВОПРОСАМ",
-      "ОТДЕЛЕНИ",
-      "УВМ",
-      "ГУВМ",
-      "ГУ МВД",
-      "МВД",
-      "УМВД",
-      "ОТДЕЛ",
-      "РОССИИ ПО"
-    ];
-    let cutIndex = -1;
-    for (const marker of tailMarkers) {
-      const idx = value.indexOf(marker);
-      if (idx >= 0 && (cutIndex === -1 || idx < cutIndex)) {
-        cutIndex = idx;
-      }
-    }
-    return cutIndex >= 0 ? value.slice(0, cutIndex) : value;
+  const cutTail = (value: string): string => {
+    const tailRegex = AUTHORITY_MARKER_REGEX;
+    const match = value.match(tailRegex);
+    if (!match || match.index === undefined) return value;
+    return value.slice(0, match.index).trimEnd();
+  };
+  const addressMarkers = new Set([
+    "ПР",
+    "ПР-КТ",
+    "УЛ",
+    "УЛ.",
+    "УЛИЦ",
+    "Д",
+    "Д.",
+    "К",
+    "К.",
+    "КОРП",
+    "КОРП.",
+    "КВ",
+    "КВ.",
+    "ЛИТ",
+    "ПЕР",
+    "ПЛ",
+    "ПЛОЩ",
+    "Р-Н",
+    "РАЙОН"
+  ]);
+  const normalizeAuthorityDigits = (value: string): string => {
+    let out = value;
+    // Latin O used as zero inside dates like 2O18.
+    out = out.replace(/(?<=\d[\s./-]*)O(?=[\s./-]*\d)/gu, "О");
+    // Digit 0 misread inside common words (e.g., Р0ССИИ).
+    out = out.replace(/(?<=[А-ЯЁ])0(?=[А-ЯЁ]{2,})/gu, "О");
+    return out;
+  };
+  const isAddressLeadingNumber = (token: string, next: string): boolean =>
+    /^[0-9]{1,3}$/.test(token) && addressMarkers.has(next);
+  const isDateToken = (token: string): boolean => {
+    const normalized = token.replace(/[ОO]/gi, "0");
+    if (/^\d{1,2}[./-]\d{1,2}([./-]\d{2,4})?$/.test(normalized)) return true;
+    if (/^\d{1,2}[./-]?$/.test(normalized)) return true;
+    if (/^\d{1,2}[./-]\d{2,4}[.]?$/.test(normalized)) return true;
+    if (/^\d{1,2}\s+\d{1,2}\s+\d{2,4}$/.test(normalized)) return true;
+    if (/^\d{4}$/.test(normalized)) return true;
+    if (/^0?\d{1,2}0\d{2}$/.test(normalized)) return true; // e.g., 2О18
+    return /(ЯНВАР|ФЕВРАЛ|МАРТ|АПРЕЛ|МАЯ|ИЮН|ИЮЛ|АВГУСТ|СЕНТЯБР|ОКТЯБР|НОЯБР|ДЕКАБР)[А-ЯЁ]*/u.test(token);
   };
 
   let cleaned = normalizeRussianText(String(text ?? "")).replace(/\s+/gu, " ").trim();
   cleaned = cleaned.replace(/[–—‑]/gu, "-");
+  cleaned = normalizeAuthorityDigits(cleaned);
   if (cleaned === "") return "";
 
   // Unify anchor and cut possible leading "МЕСТО ЖИТЕЛЬСТВА ...".
@@ -186,22 +227,42 @@ function normalizeRegistrationResult(text: string): string {
     headFixed = headFixed.replace(/(?<=\s)И(?=\s)/gu, "1");
     headFixed = headFixed.replace(/\b\d[ОO0]{1,2}\d{1,2}\b/gu, (token) => token.replace(/[ОO]/gu, "0"));
     const afterFixedRaw = headFixed + afterAnchor.slice(head.length);
-    const windowTokens = afterFixedRaw.split(/\s+/u);
+    let windowTokens = afterFixedRaw.split(/\s+/u).filter(Boolean);
+
+    // Strip leading date fragments right after the anchor (keep address-leading numbers).
+    let dateCutIndex = 0;
+    let charConsumed = 0;
+    for (; dateCutIndex < windowTokens.length; dateCutIndex++) {
+      const token = windowTokens[dateCutIndex] ?? "";
+      const next = windowTokens[dateCutIndex + 1] ?? "";
+      const tokenLen = token.length + (dateCutIndex > 0 ? 1 : 0);
+      charConsumed += tokenLen;
+      if (charConsumed > 35) break;
+      if (isAddressLeadingNumber(token, next)) break;
+      if (isDateToken(token) || token === "И" || /^Г\.?$/u.test(token) || /^Р\.?$/u.test(token)) {
+        continue;
+      }
+      break;
+    }
+    if (dateCutIndex > 0) {
+      windowTokens = windowTokens.slice(dateCutIndex);
+    }
+
     const cleanedWindow: string[] = [];
     let windowChars = 0;
     for (let i = 0; i < windowTokens.length; i++) {
       const token = windowTokens[i] ?? "";
       const next = windowTokens[i + 1] ?? "";
       const tokenLen = token.length + (cleanedWindow.length > 0 ? 1 : 0);
-      if (windowChars + tokenLen > 40) {
+      if (windowChars + tokenLen > 60) {
         cleanedWindow.push(...windowTokens.slice(i));
         break;
       }
-      const keepAbbrev = /^(Г|Д|К|Л|П)\.?$/u.test(token);
-      const nextLooksDigit = /^\d/.test(next);
-      const oneLetterNoise = token.length === 1 && !keepAbbrev;
-      const isNoiseI = token === "И" && (nextLooksDigit || /^\d/.test(windowTokens[i + 2] ?? ""));
-      if (oneLetterNoise || isNoiseI) continue;
+      const allowShort = /^(Д|Д\.|К|К\.|КВ|КВ\.|ЛИТ|Р-Н)$/u.test(token);
+      const isSingleCyr = /^[А-ЯЁ]$/u.test(token);
+      const isNoiseI = token === "И" && !isDateToken(next);
+      const isLeadingAddressNumber = isAddressLeadingNumber(token, next);
+      if (!isLeadingAddressNumber && (isNoiseI || (isSingleCyr && !allowShort))) continue;
       cleanedWindow.push(token);
       windowChars += tokenLen;
     }
@@ -209,7 +270,7 @@ function normalizeRegistrationResult(text: string): string {
     cleaned = cleaned.slice(0, anchorIdx + anchorWord.length) + " " + afterFixed;
   }
 
-  cleaned = applyTailCut(cleaned);
+  cleaned = cutTail(cleaned);
 
   // Address token cleanup.
   cleaned = cleaned
@@ -257,8 +318,43 @@ function normalizeRegistrationResult(text: string): string {
   }
   cleaned = repaired.join(" ");
 
-  cleaned = applyTailCut(cleaned);
+  cleaned = cutTail(cleaned);
   return cleaned;
+}
+
+function filterRegistrationRankedCandidates(
+  ranked: RankedCandidate[]
+): { filtered: RankedCandidate[]; diagnostics: Array<Record<string, unknown>>; excluded: RankedCandidate[] } {
+  const diagnostics: Array<Record<string, unknown>> = [];
+  const annotated = ranked.map((candidate) => {
+    const normalized = normalizeRegistrationResult(candidate.normalized_preview ?? "");
+    candidate.normalized_preview = normalized.slice(0, 120);
+    const containsAuthorityTail = registrationContainsAuthorityTail(normalized);
+    const hasAddressMarker = registrationHasAddressMarker(normalized);
+    const startsWithAnchor = normalized.startsWith("ЗАРЕГИСТРИРОВАН");
+    candidate.containsAuthorityTail = containsAuthorityTail;
+    candidate.hasAddressMarker = hasAddressMarker;
+    diagnostics.push({
+      pass_id: candidate.pass_id,
+      source: candidate.source,
+      containsAuthorityTail,
+      hasAddressMarker,
+      startsWithAnchor,
+      preview: normalized.slice(0, 80)
+    });
+    return { candidate, normalized, containsAuthorityTail, hasAddressMarker, startsWithAnchor };
+  });
+
+  const hasCleanAlternative = annotated.some(
+    (entry) => entry.startsWithAnchor && entry.hasAddressMarker && !entry.containsAuthorityTail
+  );
+
+  const filteredAnnotated = annotated.filter((entry) => !(entry.containsAuthorityTail && hasCleanAlternative));
+  return {
+    filtered: filteredAnnotated.map((entry) => entry.candidate),
+    diagnostics,
+    excluded: annotated.filter((entry) => entry.containsAuthorityTail && hasCleanAlternative).map((entry) => entry.candidate)
+  };
 }
 
 type MockPassId = "A" | "B" | "C";
@@ -792,6 +888,8 @@ type RankedCandidate = {
   keywordHits?: number;
   addressScore?: number;
   validatorScore?: number;
+  containsAuthorityTail?: boolean;
+  hasAddressMarker?: boolean;
 };
 
 function regexForField(field: PassportField): RegExp | null {
@@ -3243,7 +3341,7 @@ export class RfInternalPassportExtractor {
         const field: PassportField = "registration";
         const roi = params.rois[field];
         const attempts: NonNullable<FieldReport["attempts"]> = [];
-        const ranked: RankedCandidate[] = [];
+        let ranked: RankedCandidate[] = [];
         const anchorAlignmentScore = anchorScoreForField(field, params.anchorKeys);
         const regAnchor =
           params.searchAnchorHits.find((item) => item.label === "МЕСТО ЖИТЕЛЬСТВА") ??
@@ -3604,6 +3702,14 @@ export class RfInternalPassportExtractor {
             sweeps: []
           };
         }
+        let authorityFilterDebug: Array<Record<string, unknown>> = [];
+        let authorityExcluded: RankedCandidate[] = [];
+        if (ranked.length > 0) {
+          const filtered = filterRegistrationRankedCandidates(ranked);
+          ranked = filtered.filtered;
+          authorityFilterDebug = filtered.diagnostics;
+          authorityExcluded = filtered.excluded;
+        }
         const rankedTop = params.useVariant2 ? rankCandidatesVariant2(ranked) : rankCandidates(ranked);
         const best = rankedTop[0];
         const cleanedPreview = best ? normalizeRegistrationResult(best.normalized_preview) : "";
@@ -3638,6 +3744,14 @@ export class RfInternalPassportExtractor {
           cleanedPreview: {
             before: best?.normalized_preview ?? "",
             after: cleanedPreview
+          },
+          authorityFilter: {
+            diagnostics: authorityFilterDebug,
+            excluded: authorityExcluded.map((item) => ({
+              pass_id: item.pass_id,
+              source: item.source,
+              preview: item.normalized_preview
+            }))
           }
         };
         return {
